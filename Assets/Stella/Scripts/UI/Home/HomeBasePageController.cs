@@ -31,10 +31,10 @@ namespace StellaGuild.UI.Home
         {
             new StatRow { label = "時間", value = "12,345" },
             new StatRow { label = "人口", value = "12,345" },
-            new StatRow { label = "クエスト", value = "一覧" }
+            new StatRow { label = "クエスト", value = "12,345" }
         };
 
-        [SerializeField] private string statusBarLabel = "ステータス";
+        [SerializeField] private string statusBarLabel = "しのねこ";
         [SerializeField] private string centerIconFallbackLabel = "アイコン";
         [SerializeField] private string guildLabel = "ギルド";
         [SerializeField] private string worldLabel = "世界";
@@ -49,24 +49,21 @@ namespace StellaGuild.UI.Home
         [SerializeField] private bool rebuildLayout;
 
         private const string RootName = "HomeBaseRoot";
-        private const float TopPanelHeight = 300f;
-        private const float BottomAreaHeight = 320f;
         private const string MapViewportPath = "WorldMap3DBackground";
-        private const float SideActionButtonDiameter = 104f;
-        private static readonly Vector2 SideActionAnchor = new(0.94f, 0f);
-        private const float BottomActionGlobalYOffset = 0.08f;
-        private const float PostButtonAnchorY = 1.42f;
-        private const float PostLabelAnchorY = 1.27f;
-        private const float CargoButtonAnchorY = 0.96f;
-        private const float CargoLabelAnchorY = 0.81f;
+        private const string LayoutSignatureName = "LayoutSignature_v20260213";
+        private const float DesignWidth = 404f;
+        private const float DesignHeight = 874f;
+        private const float MainButtonDiameter = 104f;
+        private const float SideActionButtonDiameter = 86f;
         private const string ButtonBaseFillName = "BaseFill";
         private const string HomeCenterIconFileName = "icon.jpg";
         private static readonly Color32 HomeButtonBackgroundColor = new(0xC6, 0xB1, 0x98, 0xFF);
         private static readonly Color32 HomeCircleBorderColor = new(0x28, 0x19, 0x0A, 0xFF);
+        private static readonly Color32 StatusBarBackgroundColor = new(0x00, 0x00, 0x00, 0xFF);
         private static readonly Vector2 MainButtonIconPadding = Vector2.zero;
         private static readonly Vector2 SideButtonIconPadding = new(6f, 6f);
-        private static readonly Vector2 ChatButtonIconPadding = new(14f, 14f);
-        private static readonly Vector2 HomeCenterIconPadding = new(12f, 12f);
+        private static readonly Vector2 ChatButtonIconPadding = new(8f, 8f);
+        private static readonly Vector2 HomeCenterIconPadding = new(8f, 8f);
 
         private Font _font;
         private Sprite _circleSprite;
@@ -217,10 +214,21 @@ namespace StellaGuild.UI.Home
 
         private void ApplyEditorPreviewIfReady()
         {
-            var root = transform.Find(RootName);
+            var root = FindLayoutRoot();
             if (root == null)
             {
                 return;
+            }
+
+            if (HasDuplicateLayoutRoots() || root.Find(MapViewportPath) == null || !HasCurrentLayoutSignature(root))
+            {
+                RemoveExistingLayout();
+                BuildLayout();
+                root = FindLayoutRoot();
+                if (root == null)
+                {
+                    return;
+                }
             }
 
             ApplyTopLocalizationAndLayout(root);
@@ -235,6 +243,7 @@ namespace StellaGuild.UI.Home
             rebuildLayout = false;
             RemoveExistingLayout();
             BuildLayout();
+            EnsureChatNavigationAndRegistration();
         }
 
         [ContextMenu("Force Apply Home Button Sprites")]
@@ -242,7 +251,7 @@ namespace StellaGuild.UI.Home
         {
             AutoAssignUiSpritesInEditor();
 
-            var root = transform.Find(RootName);
+            var root = FindLayoutRoot();
             if (root == null)
             {
                 RemoveExistingLayout();
@@ -272,26 +281,25 @@ namespace StellaGuild.UI.Home
                 rebuildLayout = false;
                 RemoveExistingLayout();
                 BuildLayout();
+                EnsureChatNavigationAndRegistration();
                 return;
             }
 
-            if (transform.Find(RootName) != null)
+            var root = FindLayoutRoot();
+            if (root != null)
             {
-                var root = transform.Find(RootName);
-                if (root != null && root.Find(MapViewportPath) == null)
+                if (HasDuplicateLayoutRoots() || root.Find(MapViewportPath) == null || !HasCurrentLayoutSignature(root))
                 {
                     RemoveExistingLayout();
                     BuildLayout();
+                    EnsureChatNavigationAndRegistration();
                     return;
                 }
 
-                if (root != null)
-                {
-                    EnsureMapViewportComponents(root);
-                    ApplyTopLocalizationAndLayout(root);
-                    ApplyBottomLocalizationAndLayout(root);
-                    ApplyVisualAssets(root);
-                }
+                EnsureMapViewportComponents(root);
+                ApplyTopLocalizationAndLayout(root);
+                ApplyBottomLocalizationAndLayout(root);
+                ApplyVisualAssets(root);
 
                 EnsureChatNavigationAndRegistration();
                 return;
@@ -304,6 +312,12 @@ namespace StellaGuild.UI.Home
 
         private void EnsureChatNavigationAndRegistration()
         {
+            var root = FindLayoutRoot();
+            if (root != null)
+            {
+                EnsureChatButtonBinding(root);
+            }
+
             var router = ResolvePageRouter();
             if (router == null)
             {
@@ -314,12 +328,6 @@ namespace StellaGuild.UI.Home
             if (chatPage != null)
             {
                 router.RegisterRuntimePage(UIPageType.Chat, chatPage);
-            }
-
-            var root = transform.Find(RootName);
-            if (root != null)
-            {
-                EnsureChatButtonBinding(root);
             }
         }
 
@@ -332,19 +340,30 @@ namespace StellaGuild.UI.Home
             }
 
             var chatButtonImage = chatButtonTransform.GetComponent<Image>();
-            if (chatButtonImage == null)
-            {
-                return;
-            }
-
             var button = chatButtonTransform.GetComponent<Button>();
             if (button == null)
             {
                 button = chatButtonTransform.gameObject.AddComponent<Button>();
             }
 
-            chatButtonImage.raycastTarget = true;
-            button.targetGraphic = chatButtonImage;
+            var targetGraphic = chatButtonTransform.Find(ButtonBaseFillName)?.GetComponent<Image>();
+            if (targetGraphic == null)
+            {
+                targetGraphic = chatButtonImage;
+            }
+
+            if (targetGraphic == null)
+            {
+                return;
+            }
+
+            targetGraphic.raycastTarget = true;
+            if (chatButtonImage != null && chatButtonImage != targetGraphic)
+            {
+                chatButtonImage.raycastTarget = false;
+            }
+
+            button.targetGraphic = targetGraphic;
             button.transition = Selectable.Transition.None;
             button.onClick.RemoveListener(HandleChatButtonPressed);
             button.onClick.AddListener(HandleChatButtonPressed);
@@ -427,6 +446,11 @@ namespace StellaGuild.UI.Home
         private void MigrateLocalizedDefaultsIfNeeded()
         {
             statusBarLabel = ToJapaneseIfEnglish(statusBarLabel);
+            if (statusBarLabel == "ステータス" || statusBarLabel == "ステータスバー")
+            {
+                statusBarLabel = "しのねこ";
+            }
+
             centerIconFallbackLabel = ToJapaneseIfEnglish(centerIconFallbackLabel);
             guildLabel = ToJapaneseIfEnglish(guildLabel);
             worldLabel = ToJapaneseIfEnglish(worldLabel);
@@ -448,6 +472,11 @@ namespace StellaGuild.UI.Home
                 var row = rows[i];
                 row.label = ToJapaneseIfEnglish(row.label);
                 row.value = ToJapaneseIfEnglish(row.value);
+                if (row.label == "クエスト" && row.value == "一覧")
+                {
+                    row.value = "12,345";
+                }
+
                 rows[i] = row;
             }
         }
@@ -461,7 +490,7 @@ namespace StellaGuild.UI.Home
 
             return value switch
             {
-                "Status Bar" => "ステータス",
+                "Status Bar" => "しのねこ",
                 "Icon" => "アイコン",
                 "Guild" => "ギルド",
                 "World" => "世界",
@@ -503,20 +532,74 @@ namespace StellaGuild.UI.Home
 
         private void RemoveExistingLayout()
         {
-            var existing = transform.Find(RootName);
-            if (existing == null)
+            for (var i = transform.childCount - 1; i >= 0; i--)
+            {
+                var child = transform.GetChild(i);
+                if (child.name != RootName)
+                {
+                    continue;
+                }
+
+                if (Application.isPlaying)
+                {
+                    Destroy(child.gameObject);
+                }
+                else
+                {
+                    DestroyImmediate(child.gameObject);
+                }
+            }
+        }
+
+        private bool HasCurrentLayoutSignature(Transform root)
+        {
+            return root != null && root.Find(LayoutSignatureName) != null;
+        }
+
+        private RectTransform FindLayoutRoot()
+        {
+            for (var i = 0; i < transform.childCount; i++)
+            {
+                var child = transform.GetChild(i);
+                if (child.name == RootName)
+                {
+                    return child as RectTransform;
+                }
+            }
+
+            return null;
+        }
+
+        private bool HasDuplicateLayoutRoots()
+        {
+            var count = 0;
+            for (var i = 0; i < transform.childCount; i++)
+            {
+                if (transform.GetChild(i).name != RootName)
+                {
+                    continue;
+                }
+
+                count++;
+                if (count > 1)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private void CreateLayoutSignature(RectTransform root)
+        {
+            if (root == null || root.Find(LayoutSignatureName) != null)
             {
                 return;
             }
 
-            if (Application.isPlaying)
-            {
-                Destroy(existing.gameObject);
-            }
-            else
-            {
-                DestroyImmediate(existing.gameObject);
-            }
+            var signature = CreateRect(LayoutSignatureName, root, Vector2.zero, Vector2.zero, Vector2.zero, Vector2.zero);
+            signature.sizeDelta = Vector2.zero;
+            signature.gameObject.SetActive(false);
         }
 
         private void BuildLayout()
@@ -530,6 +613,7 @@ namespace StellaGuild.UI.Home
             BuildTopPanel(root);
             BuildMainArea(root);
             BuildBottomButtons(root);
+            CreateLayoutSignature(root);
             ApplyVisualAssets(root);
         }
 
@@ -554,31 +638,28 @@ namespace StellaGuild.UI.Home
 
         private void BuildTopPanel(RectTransform root)
         {
-            var topPanel = CreateRect(
-                "TopPanel",
-                root,
-                new Vector2(0f, 1f),
-                new Vector2(1f, 1f),
-                new Vector2(0f, -TopPanelHeight),
-                new Vector2(0f, 0f));
+            var topPanel = CreateRect("TopPanel", root, Vector2.zero, Vector2.one, Vector2.zero, Vector2.zero);
 
-            var panelImage = topPanel.gameObject.AddComponent<Image>();
-            var topPanelColor = StellaColorTokens.Get(ColorToken.SecondaryBackground);
-            topPanelColor.a = 0.72f;
-            ConfigurePanelImage(panelImage, topPanelColor);
+            var panelBase = CreateDesignRect("PanelBase", topPanel, 0f, 54f, 404f, 136f);
+            var panelBaseImage = panelBase.gameObject.AddComponent<Image>();
+            ConfigurePanelImage(panelBaseImage, HomeButtonBackgroundColor);
 
-            var header = CreateRect(
-                "Header",
-                topPanel,
-                new Vector2(0f, 1f),
-                new Vector2(1f, 1f),
-                new Vector2(0f, -76f),
-                new Vector2(0f, 0f));
+            var panelRightDrop = CreateDesignRect("PanelRightDrop", topPanel, 282f, 159f, 122f, 31f);
+            var panelRightDropImage = panelRightDrop.gameObject.AddComponent<Image>();
+            ConfigureRoundedImage(panelRightDropImage, HomeButtonBackgroundColor);
+
+            var panelRightCorner = CreateDesignCircle("PanelRightCorner", topPanel, 388f, 189f, 36f, HomeButtonBackgroundColor);
+            panelRightCorner.SetAsLastSibling();
+            var panelLeftCorner = CreateDesignCircle("PanelLeftCorner", topPanel, 16f, 189f, 32f, HomeButtonBackgroundColor);
+            panelLeftCorner.SetAsLastSibling();
+
+            var header = CreateDesignRect("Header", topPanel, 0f, 0f, 404f, 55f);
             var headerImage = header.gameObject.AddComponent<Image>();
-            ConfigurePanelImage(headerImage, new Color(0f, 0f, 0f, 0.62f));
+            ConfigurePanelImage(headerImage, StatusBarBackgroundColor);
 
             var headerLabel = CreateText("HeaderLabel", header, statusBarLabel, 58, StellaColorTokens.Get(ColorToken.BaseBackground), TextAnchor.MiddleCenter);
-            AddTextShadow(headerLabel, new Color(0f, 0f, 0f, 0.3f));
+            AddTextShadow(headerLabel, new Color(0f, 0f, 0f, 0.24f));
+            header.SetAsLastSibling();
 
             BuildStatusColumns(topPanel);
             BuildCenterIcon(topPanel);
@@ -586,47 +667,44 @@ namespace StellaGuild.UI.Home
 
         private void BuildStatusColumns(RectTransform topPanel)
         {
-            BuildStatusColumn(topPanel, leftStats, new Vector2(0f, 1f), new Vector2(0f, -110f), false);
-            BuildStatusColumn(topPanel, rightStats, new Vector2(1f, 1f), new Vector2(0f, -110f), true);
+            BuildStatusColumn(topPanel, leftStats, false);
+            BuildStatusColumn(topPanel, rightStats, true);
         }
 
-        private void BuildStatusColumn(RectTransform parent, List<StatRow> rows, Vector2 anchor, Vector2 startOffset, bool alignRight)
+        private void BuildStatusColumn(RectTransform parent, List<StatRow> rows, bool alignRight)
         {
-            var column = CreateRect(
-                alignRight ? "RightStats" : "LeftStats",
-                parent,
-                anchor,
-                anchor,
-                startOffset,
-                startOffset);
-
-            column.sizeDelta = new Vector2(320f, 170f);
-            column.pivot = alignRight ? new Vector2(1f, 1f) : new Vector2(0f, 1f);
-            column.anchoredPosition += alignRight ? new Vector2(-24f, 0f) : new Vector2(24f, 0f);
+            var column = CreateRect(alignRight ? "RightStats" : "LeftStats", parent, Vector2.zero, Vector2.one, Vector2.zero, Vector2.zero);
+            var labelStartX = alignRight ? 262f : 0f;
+            var valueStartX = alignRight ? 291f : 30f;
+            const float rowStartY = 71f;
+            const float rowSpacing = 31.2f;
+            const float labelWidth = 32f;
+            const float valueWidth = 112f;
+            const float rowHeight = 22.3f;
 
             for (var i = 0; i < Mathf.Min(3, rows.Count); i++)
             {
                 var row = rows[i];
-                var y = -i * 52f;
+                var y = rowStartY + i * rowSpacing;
 
-                var labelRect = CreateRect(
+                var labelRect = CreateDesignRect(
                     $"{(alignRight ? "R" : "L")}Label{i}",
                     column,
-                    new Vector2(0f, 1f),
-                    new Vector2(0f, 1f),
-                    new Vector2(0f, y - 34f),
-                    new Vector2(84f, y));
+                    labelStartX,
+                    y,
+                    labelWidth,
+                    rowHeight);
                 var labelImage = labelRect.gameObject.AddComponent<Image>();
                 ConfigureRoundedImage(labelImage, Color.black);
-                CreateText("LabelText", labelRect, row.label, 14, StellaColorTokens.Get(ColorToken.BaseBackground), TextAnchor.MiddleCenter);
+                CreateText("LabelText", labelRect, row.label, 13, StellaColorTokens.Get(ColorToken.BaseBackground), TextAnchor.MiddleCenter);
 
-                var valueRect = CreateRect(
+                var valueRect = CreateDesignRect(
                     $"{(alignRight ? "R" : "L")}Value{i}",
                     column,
-                    new Vector2(0f, 1f),
-                    new Vector2(0f, 1f),
-                    new Vector2(94f, y - 34f),
-                    new Vector2(308f, y));
+                    valueStartX,
+                    y,
+                    valueWidth,
+                    rowHeight);
                 var valueImage = valueRect.gameObject.AddComponent<Image>();
                 ConfigureRoundedImage(valueImage, Color.white);
                 CreateText("ValueText", valueRect, row.value, 28, StellaColorTokens.Get(ColorToken.TextShadow), TextAnchor.MiddleCenter);
@@ -635,8 +713,8 @@ namespace StellaGuild.UI.Home
 
         private void BuildCenterIcon(RectTransform topPanel)
         {
-            var ring = CreateCircle("CenterIconRing", topPanel, new Vector2(0.5f, 0.22f), 178f, HomeCircleBorderColor);
-            var plate = CreateCircle("CenterIconPlate", topPanel, new Vector2(0.5f, 0.22f), 150f, StellaColorTokens.Get(ColorToken.MainButtonSecondary));
+            var ring = CreateDesignCircle("CenterIconRing", topPanel, 202f, 109f, 82f, HomeCircleBorderColor);
+            var plate = CreateDesignCircle("CenterIconPlate", topPanel, 202f, 109f, 68f, HomeButtonBackgroundColor);
             plate.SetSiblingIndex(ring.GetSiblingIndex() + 1);
 
             var iconLabel = CreateText("CenterIconLabel", plate, centerIconFallbackLabel, 42, StellaColorTokens.Get(ColorToken.BaseBackground), TextAnchor.MiddleCenter);
@@ -645,20 +723,13 @@ namespace StellaGuild.UI.Home
 
         private void BuildMainArea(RectTransform root)
         {
-            var mainArea = CreateRect(
-                "MainArea",
-                root,
-                new Vector2(0f, 0f),
-                new Vector2(1f, 1f),
-                new Vector2(0f, BottomAreaHeight),
-                new Vector2(0f, -TopPanelHeight));
-
-            var chatButton = CreateCircle("ChatButton", mainArea, new Vector2(0.12f, 0.86f), 120f, HomeButtonBackgroundColor);
-            AddCircleBorder(chatButton, StellaColorTokens.Get(ColorToken.TextShadow), 8f);
-            var chatText = CreateText("ChatDots", chatButton, "...", 52, StellaColorTokens.Get(ColorToken.TextShadow), TextAnchor.MiddleCenter);
+            var mainArea = CreateRect("MainArea", root, Vector2.zero, Vector2.one, Vector2.zero, Vector2.zero);
+            var chatButton = CreateDesignCircle("ChatButton", mainArea, 47f, 247f, 60f, HomeButtonBackgroundColor);
+            AddCircleBorder(chatButton, StellaColorTokens.Get(ColorToken.TextShadow), 6f);
+            var chatText = CreateText("ChatDots", chatButton, "...", 46, StellaColorTokens.Get(ColorToken.TextShadow), TextAnchor.MiddleCenter);
             AddTextShadow(chatText, new Color(0f, 0f, 0f, 0.2f));
 
-            var badge = CreateCircle("Badge", chatButton, new Vector2(0.83f, 0.8f), 32f, StellaColorTokens.Get(ColorToken.Attention));
+            var badge = CreateDesignCircle("Badge", mainArea, 69f, 224f, 18f, StellaColorTokens.Get(ColorToken.Attention));
             var badgeText = CreateText("BadgeText", badge, "1", 18, Color.white, TextAnchor.MiddleCenter);
             AddTextShadow(badgeText, StellaColorTokens.Get(ColorToken.TextShadow));
         }
@@ -701,14 +772,16 @@ namespace StellaGuild.UI.Home
             SetElementActive(bottom, "WorldLabel", false);
             SetBottomLabelText(bottom, "PostLabel", postButtonLabel);
             SetBottomLabelText(bottom, "CargoLabel", cargoButtonLabel);
+            SetDesignCircleAtPath(bottom, "GuildBackdrop", 34f, 841f, 172f);
+            SetDesignCircleAtPath(bottom, "WorldBackdrop", 344f, 841f, 172f);
 
-            SetAnchoredElement(bottom, "GuildButton", new Vector2(0.17f, 0.33f + BottomActionGlobalYOffset), 230f);
-            SetAnchoredElement(bottom, "WorldButton", new Vector2(0.83f, 0.33f + BottomActionGlobalYOffset), 230f);
+            SetDesignCircleAtPath(bottom, "GuildButton", 69f, 804f, MainButtonDiameter);
+            SetDesignCircleAtPath(bottom, "WorldButton", 334f, 804f, MainButtonDiameter);
 
-            SetAnchoredElement(bottom, "PostButton", new Vector2(SideActionAnchor.x, PostButtonAnchorY + BottomActionGlobalYOffset), SideActionButtonDiameter);
-            SetAnchoredElement(bottom, "PostLabel", new Vector2(SideActionAnchor.x, PostLabelAnchorY + BottomActionGlobalYOffset));
-            SetAnchoredElement(bottom, "CargoButton", new Vector2(SideActionAnchor.x, CargoButtonAnchorY + BottomActionGlobalYOffset), SideActionButtonDiameter);
-            SetAnchoredElement(bottom, "CargoLabel", new Vector2(SideActionAnchor.x, CargoLabelAnchorY + BottomActionGlobalYOffset));
+            SetDesignCircleAtPath(bottom, "PostButton", 364f, 694f, SideActionButtonDiameter);
+            SetDesignCircleAtPath(bottom, "CargoButton", 364f, 610f, SideActionButtonDiameter);
+            SetDesignRectAtPath(bottom, "PostLabel", 312f, 709f, 104f, 52f);
+            SetDesignRectAtPath(bottom, "CargoLabel", 312f, 627f, 104f, 52f);
         }
 
         private void ApplyTopLocalizationAndLayout(Transform root)
@@ -1151,24 +1224,6 @@ namespace StellaGuild.UI.Home
             }
         }
 
-        private void SetAnchoredElement(Transform parent, string childName, Vector2 anchor, float size = -1f)
-        {
-            var element = parent.Find(childName) as RectTransform;
-            if (element == null)
-            {
-                return;
-            }
-
-            element.anchorMin = anchor;
-            element.anchorMax = anchor;
-            element.anchoredPosition = Vector2.zero;
-
-            if (size > 0f)
-            {
-                element.sizeDelta = new Vector2(size, size);
-            }
-        }
-
         private void SetElementActive(Transform parent, string childName, bool active)
         {
             var element = parent.Find(childName);
@@ -1187,62 +1242,91 @@ namespace StellaGuild.UI.Home
 
         private void BuildBottomButtons(RectTransform root)
         {
-            var bottom = CreateRect(
-                "BottomArea",
-                root,
-                new Vector2(0f, 0f),
-                new Vector2(1f, 0f),
-                new Vector2(0f, 0f),
-                new Vector2(0f, BottomAreaHeight));
+            var bottom = CreateRect("BottomArea", root, Vector2.zero, Vector2.one, Vector2.zero, Vector2.zero);
 
-            var leftMain = CreateCircle("GuildButton", bottom, new Vector2(0.17f, 0.33f + BottomActionGlobalYOffset), 230f, HomeButtonBackgroundColor);
+            var guildBackdrop = CreateDesignCircle("GuildBackdrop", bottom, 34f, 841f, 172f, HomeButtonBackgroundColor);
+            guildBackdrop.SetAsFirstSibling();
+            var worldBackdrop = CreateDesignCircle("WorldBackdrop", bottom, 344f, 841f, 172f, HomeButtonBackgroundColor);
+            worldBackdrop.SetAsFirstSibling();
+
+            var leftMain = CreateDesignCircle("GuildButton", bottom, 69f, 804f, MainButtonDiameter, HomeButtonBackgroundColor);
             AddCircleBorder(leftMain, StellaColorTokens.Get(ColorToken.TextShadow), 8f);
 
-            var rightMain = CreateCircle("WorldButton", bottom, new Vector2(0.83f, 0.33f + BottomActionGlobalYOffset), 230f, HomeButtonBackgroundColor);
+            var rightMain = CreateDesignCircle("WorldButton", bottom, 334f, 804f, MainButtonDiameter, HomeButtonBackgroundColor);
             AddCircleBorder(rightMain, StellaColorTokens.Get(ColorToken.TextShadow), 8f);
 
-            var postButton = CreateCircle("PostButton", bottom, new Vector2(SideActionAnchor.x, PostButtonAnchorY + BottomActionGlobalYOffset), SideActionButtonDiameter, HomeButtonBackgroundColor);
+            var postButton = CreateDesignCircle("PostButton", bottom, 364f, 694f, SideActionButtonDiameter, HomeButtonBackgroundColor);
             AddCircleBorder(postButton, StellaColorTokens.Get(ColorToken.TextShadow), 6f);
-            var postLabelText = CreateBottomLabel("PostLabel", bottom, postButtonLabel, new Vector2(SideActionAnchor.x, PostLabelAnchorY + BottomActionGlobalYOffset), 42);
+            var postLabelText = CreateBottomLabel("PostLabel", bottom, postButtonLabel, 312f, 709f, 104f, 52f, 42);
             AddTextStroke(postLabelText);
 
-            var cargoButton = CreateCircle("CargoButton", bottom, new Vector2(SideActionAnchor.x, CargoButtonAnchorY + BottomActionGlobalYOffset), SideActionButtonDiameter, HomeButtonBackgroundColor);
+            var cargoButton = CreateDesignCircle("CargoButton", bottom, 364f, 610f, SideActionButtonDiameter, HomeButtonBackgroundColor);
             AddCircleBorder(cargoButton, StellaColorTokens.Get(ColorToken.TextShadow), 6f);
-            var cargoLabelText = CreateBottomLabel("CargoLabel", bottom, cargoButtonLabel, new Vector2(SideActionAnchor.x, CargoLabelAnchorY + BottomActionGlobalYOffset), 42);
+            var cargoLabelText = CreateBottomLabel("CargoLabel", bottom, cargoButtonLabel, 312f, 627f, 104f, 52f, 42);
             AddTextStroke(cargoLabelText);
         }
 
-        private Text CreateBottomLabel(string name, RectTransform parent, string value, Vector2 anchor, int fontSize = 62)
+        private Text CreateBottomLabel(string name, RectTransform parent, string value, float x, float y, float width, float height, int fontSize = 62)
         {
-            var labelRect = CreateRect(
-                name,
-                parent,
-                anchor,
-                anchor,
-                new Vector2(-150f, -36f),
-                new Vector2(150f, 36f));
+            var labelRect = CreateDesignRect(name, parent, x, y, width, height);
 
             var text = CreateText("Text", labelRect, value, fontSize, Color.white, TextAnchor.MiddleCenter);
             AddTextShadow(text, StellaColorTokens.Get(ColorToken.TextShadow));
             return text;
         }
 
-        private RectTransform CreateCircle(string name, RectTransform parent, Vector2 anchor, float diameter, Color color)
+        private RectTransform CreateDesignRect(string name, Transform parent, float x, float y, float width, float height)
         {
-            var rect = CreateRect(
-                name,
-                parent,
-                anchor,
-                anchor,
-                new Vector2(-diameter * 0.5f, -diameter * 0.5f),
-                new Vector2(diameter * 0.5f, diameter * 0.5f));
+            var rect = CreateRect(name, parent, Vector2.zero, Vector2.one, Vector2.zero, Vector2.zero);
+            ApplyDesignRect(rect, x, y, width, height);
+            return rect;
+        }
 
+        private RectTransform CreateDesignCircle(string name, Transform parent, float centerX, float centerY, float diameter, Color color)
+        {
+            var rect = CreateDesignRect(name, parent, centerX - diameter * 0.5f, centerY - diameter * 0.5f, diameter, diameter);
             var image = rect.gameObject.AddComponent<Image>();
             image.sprite = GetCircleSprite();
             image.type = Image.Type.Simple;
             image.color = color;
             image.raycastTarget = false;
             return rect;
+        }
+
+        private void SetDesignCircleAtPath(Transform root, string path, float centerX, float centerY, float diameter)
+        {
+            var rect = root.Find(path) as RectTransform;
+            if (rect == null)
+            {
+                return;
+            }
+
+            ApplyDesignRect(rect, centerX - diameter * 0.5f, centerY - diameter * 0.5f, diameter, diameter);
+        }
+
+        private void SetDesignRectAtPath(Transform root, string path, float x, float y, float width, float height)
+        {
+            var rect = root.Find(path) as RectTransform;
+            if (rect == null)
+            {
+                return;
+            }
+
+            ApplyDesignRect(rect, x, y, width, height);
+        }
+
+        private static void ApplyDesignRect(RectTransform rect, float x, float y, float width, float height)
+        {
+            if (rect == null)
+            {
+                return;
+            }
+
+            rect.anchorMin = new Vector2(x / DesignWidth, 1f - ((y + height) / DesignHeight));
+            rect.anchorMax = new Vector2((x + width) / DesignWidth, 1f - (y / DesignHeight));
+            rect.offsetMin = Vector2.zero;
+            rect.offsetMax = Vector2.zero;
+            rect.anchoredPosition = Vector2.zero;
         }
 
         private void AddCircleBorder(RectTransform circleRect, Color borderColor, float borderThickness)

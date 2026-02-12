@@ -139,7 +139,7 @@ namespace StellaGuild.UI.Home
 
         private void BuildMaterials()
         {
-            _groundMaterial = CreateMaterial(StellaColorTokens.Get(ColorToken.SecondaryBackground), 0.05f, 0.05f);
+            _groundMaterial = CreateMaterial(new Color(0.99607843f, 0.9607843f, 0.9098039f, 1f), 0.05f, 0.05f);
             _buildingMaterial = CreateMaterial(new Color(0.50f, 0.40f, 0.28f, 1f), 0.05f, 0.3f);
             _accentMaterial = CreateMaterial(StellaColorTokens.Get(ColorToken.Attention), 0.2f, 0.45f);
             _roadMaterial = CreateMaterial(StellaColorTokens.Get(ColorToken.BaseBackground), 0f, 0.04f);
