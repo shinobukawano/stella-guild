@@ -5,8 +5,8 @@ using System.IO;
 using StellaGuild.Design;
 using StellaGuild.Flow;
 using StellaGuild.UI;
+using StellaGuild.UI.Home;
 using UnityEditor;
-using UnityEditor.Events;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -123,6 +123,65 @@ namespace StellaGuild.EditorTools
                 "OK");
         }
 
+        [MenuItem("Stella/Setup/Apply Home Base Layout To Bootstrap")]
+        public static void ApplyHomeBaseLayoutToBootstrap()
+        {
+            if (!File.Exists(BootstrapScenePath))
+            {
+                EditorUtility.DisplayDialog(
+                    "Bootstrap Scene Not Found",
+                    "Please create the bootstrap scene first from Stella > Setup > Create Bootstrap + Stage01.",
+                    "OK");
+                return;
+            }
+
+            var scene = EditorSceneManager.OpenScene(BootstrapScenePath, OpenSceneMode.Single);
+            var homePageObject = GameObject.Find("HomePage");
+            var settingsPageObject = GameObject.Find("SettingsPage");
+            var titlePageObject = GameObject.Find("TitlePage");
+            var uiRootObject = GameObject.Find("UIRoot");
+            var appObject = GameObject.Find("App");
+
+            if (homePageObject == null || uiRootObject == null || appObject == null)
+            {
+                EditorUtility.DisplayDialog(
+                    "Scene Structure Missing",
+                    "HomePage, UIRoot, or App object is missing. Re-run Stella > Setup > Create Bootstrap + Stage01.",
+                    "OK");
+                return;
+            }
+
+            var homeBaseController = EnsureHomeBaseController(homePageObject);
+            var pageRouter = uiRootObject.GetComponent<UIPageRouter>();
+            if (pageRouter != null)
+            {
+                var settingsPage = settingsPageObject != null ? settingsPageObject.GetComponent<UIPage>() : null;
+                ConfigureHomePageEntry(pageRouter, homeBaseController, settingsPage);
+            }
+
+            var startupFlow = appObject.GetComponent<StartupFlowController>();
+            if (startupFlow != null)
+            {
+                var startupFlowSerialized = new SerializedObject(startupFlow);
+                startupFlowSerialized.FindProperty("startDestinationPage").enumValueIndex = (int)UIPageType.Home;
+                startupFlowSerialized.ApplyModifiedPropertiesWithoutUndo();
+            }
+
+            if (titlePageObject != null)
+            {
+                UnityEngine.Object.DestroyImmediate(titlePageObject);
+            }
+
+            homeBaseController.RebuildHomeBaseLayout();
+            EditorSceneManager.MarkSceneDirty(scene);
+            EditorSceneManager.SaveScene(scene);
+
+            EditorUtility.DisplayDialog(
+                "Home Base Applied",
+                "HomePage layout was updated and bootstrap now starts directly from Home.",
+                "OK");
+        }
+
         private static bool CanCreateOrOverwriteScenes()
         {
             var bootstrapExists = File.Exists(BootstrapScenePath);
@@ -166,30 +225,18 @@ namespace StellaGuild.EditorTools
             var canvas = CreateCanvas();
             var startupLogoCanvasGroup = CreateStartupLogo(canvas.transform, out var hasStartupLogoSprite);
 
-            var titlePage = CreatePageRoot<TitlePageController>(canvas.transform, "TitlePage", new Color32(0xFE, 0xF5, 0xE8, 0xFF));
-            var homePage = CreatePageRoot<SimplePageController>(canvas.transform, "HomePage", new Color32(0xFE, 0xF5, 0xE8, 0xFF));
+            var homePage = CreatePageRoot<HomeBasePageController>(canvas.transform, "HomePage", new Color32(0xFE, 0xF5, 0xE8, 0xFF));
             var settingsPage = CreatePageRoot<SimplePageController>(canvas.transform, "SettingsPage", new Color32(0xFE, 0xF5, 0xE8, 0xFF));
 
-            CreatePageTitle(titlePage.transform, "STELLA GUILD");
-            CreatePageTitle(homePage.transform, "HOME");
             CreatePageTitle(settingsPage.transform, "SETTINGS");
-
-            var startButton = CreateButton(titlePage.transform, "StartButton", "Start", new Vector2(0f, -280f), new Vector2(420f, 120f));
-            var settingsButton = CreateButton(titlePage.transform, "SettingsButton", "Settings", new Vector2(0f, -430f), new Vector2(300f, 96f));
-
-            var titleController = titlePage.GetComponent<TitlePageController>();
-            AssignTitlePageButtons(titleController, startButton, settingsButton);
 
             var uiRoot = new GameObject("UIRoot");
             var pageRouter = uiRoot.AddComponent<UIPageRouter>();
-            ConfigurePageRouter(pageRouter, titlePage.GetComponent<UIPage>(), homePage.GetComponent<UIPage>(), settingsPage.GetComponent<UIPage>());
+            ConfigurePageRouter(pageRouter, homePage.GetComponent<UIPage>(), settingsPage.GetComponent<UIPage>());
 
             var app = new GameObject("App");
             var startupFlow = app.AddComponent<StartupFlowController>();
             ConfigureStartupFlow(startupFlow, pageRouter, startupLogoCanvasGroup, hasStartupLogoSprite);
-
-            BindButtonEvents(startButton, startupFlow.OnStartPressed);
-            BindButtonEvents(settingsButton, startupFlow.OnSettingsPressed);
 
             EditorSceneManager.SaveScene(bootstrapScene, BootstrapScenePath);
         }
@@ -271,49 +318,15 @@ namespace StellaGuild.EditorTools
             text.color = new Color32(0x28, 0x19, 0x0A, 0xFF);
         }
 
-        private static Button CreateButton(Transform parent, string name, string label, Vector2 anchoredPosition, Vector2 size)
-        {
-            var buttonObject = new GameObject(name, typeof(RectTransform), typeof(Image), typeof(Button));
-            var rect = buttonObject.GetComponent<RectTransform>();
-            rect.SetParent(parent, false);
-            rect.anchorMin = new Vector2(0.5f, 0.5f);
-            rect.anchorMax = new Vector2(0.5f, 0.5f);
-            rect.pivot = new Vector2(0.5f, 0.5f);
-            rect.anchoredPosition = anchoredPosition;
-            rect.sizeDelta = size;
-
-            var image = buttonObject.GetComponent<Image>();
-            image.color = new Color32(0x9F, 0x16, 0x00, 0xFF);
-
-            var labelObject = CreateFullStretchUiObject("Label", buttonObject.transform);
-            var labelText = labelObject.AddComponent<Text>();
-            labelText.text = label;
-            labelText.font = GetDefaultFont();
-            labelText.fontSize = 54;
-            labelText.alignment = TextAnchor.MiddleCenter;
-            labelText.color = new Color32(0xFE, 0xF5, 0xE8, 0xFF);
-
-            return buttonObject.GetComponent<Button>();
-        }
-
-        private static void AssignTitlePageButtons(TitlePageController titleController, Button startButton, Button settingsButton)
-        {
-            var titleControllerSerialized = new SerializedObject(titleController);
-            titleControllerSerialized.FindProperty("startButton").objectReferenceValue = startButton;
-            titleControllerSerialized.FindProperty("settingsButton").objectReferenceValue = settingsButton;
-            titleControllerSerialized.ApplyModifiedPropertiesWithoutUndo();
-        }
-
-        private static void ConfigurePageRouter(UIPageRouter pageRouter, UIPage titlePage, UIPage homePage, UIPage settingsPage)
+        private static void ConfigurePageRouter(UIPageRouter pageRouter, UIPage homePage, UIPage settingsPage)
         {
             var routerSerialized = new SerializedObject(pageRouter);
-            routerSerialized.FindProperty("initialPage").enumValueIndex = (int)UIPageType.Title;
+            routerSerialized.FindProperty("initialPage").enumValueIndex = (int)UIPageType.Home;
 
             var entries = routerSerialized.FindProperty("pageEntries");
-            entries.arraySize = 3;
-            SetRouterEntry(entries.GetArrayElementAtIndex(0), UIPageType.Title, titlePage);
-            SetRouterEntry(entries.GetArrayElementAtIndex(1), UIPageType.Home, homePage);
-            SetRouterEntry(entries.GetArrayElementAtIndex(2), UIPageType.Settings, settingsPage);
+            entries.arraySize = 2;
+            SetRouterEntry(entries.GetArrayElementAtIndex(0), UIPageType.Home, homePage);
+            SetRouterEntry(entries.GetArrayElementAtIndex(1), UIPageType.Settings, settingsPage);
 
             routerSerialized.ApplyModifiedPropertiesWithoutUndo();
         }
@@ -328,7 +341,7 @@ namespace StellaGuild.EditorTools
         {
             var startupFlowSerialized = new SerializedObject(startupFlow);
             startupFlowSerialized.FindProperty("pageRouter").objectReferenceValue = pageRouter;
-            startupFlowSerialized.FindProperty("startDestinationPage").enumValueIndex = (int)UIPageType.BattleHud;
+            startupFlowSerialized.FindProperty("startDestinationPage").enumValueIndex = (int)UIPageType.Home;
             startupFlowSerialized.FindProperty("gameplaySceneName").stringValue = "Stage01";
             startupFlowSerialized.FindProperty("startupLogoCanvasGroup").objectReferenceValue = startupLogoCanvasGroup;
             startupFlowSerialized.FindProperty("startupLogoDurationSeconds").floatValue = 1.6f;
@@ -337,18 +350,37 @@ namespace StellaGuild.EditorTools
             startupFlowSerialized.ApplyModifiedPropertiesWithoutUndo();
         }
 
-        private static void BindButtonEvents(Button button, UnityEngine.Events.UnityAction call)
+        private static HomeBasePageController EnsureHomeBaseController(GameObject homePageObject)
         {
-            ClearPersistentListeners(button.onClick);
-            UnityEventTools.AddPersistentListener(button.onClick, call);
+            var homeBaseController = homePageObject.GetComponent<HomeBasePageController>();
+            if (homeBaseController != null)
+            {
+                return homeBaseController;
+            }
+
+            var existingPageControllers = homePageObject.GetComponents<UIPage>();
+            foreach (var existingController in existingPageControllers)
+            {
+                UnityEngine.Object.DestroyImmediate(existingController);
+            }
+
+            homeBaseController = homePageObject.AddComponent<HomeBasePageController>();
+            return homeBaseController;
         }
 
-        private static void ClearPersistentListeners(UnityEngine.Events.UnityEvent unityEvent)
+        private static void ConfigureHomePageEntry(UIPageRouter pageRouter, UIPage homePage, UIPage settingsPage)
         {
-            for (var i = unityEvent.GetPersistentEventCount() - 1; i >= 0; i--)
+            var routerSerialized = new SerializedObject(pageRouter);
+            routerSerialized.FindProperty("initialPage").enumValueIndex = (int)UIPageType.Home;
+            var entries = routerSerialized.FindProperty("pageEntries");
+            entries.arraySize = settingsPage != null ? 2 : 1;
+            SetRouterEntry(entries.GetArrayElementAtIndex(0), UIPageType.Home, homePage);
+            if (settingsPage != null)
             {
-                UnityEventTools.RemovePersistentListener(unityEvent, i);
+                SetRouterEntry(entries.GetArrayElementAtIndex(1), UIPageType.Settings, settingsPage);
             }
+
+            routerSerialized.ApplyModifiedPropertiesWithoutUndo();
         }
 
         private static Text CreateFullStretchText(string name, Transform parent, string value)

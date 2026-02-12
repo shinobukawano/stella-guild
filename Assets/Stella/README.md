@@ -10,6 +10,7 @@ This folder provides a minimal UI foundation and startup page flow for the iOS-f
 - `Assets/Stella/Scripts/UI/UIPageRouter.cs`
 - `Assets/Stella/Scripts/UI/TitlePageController.cs`
 - `Assets/Stella/Scripts/UI/SimplePageController.cs`
+- `Assets/Stella/Scripts/UI/Home/HomeBasePageController.cs`
 - `Assets/Stella/Scripts/Flow/StartupFlowController.cs`
 - `Assets/Stella/Scripts/Design/ColorToken.cs`
 - `Assets/Stella/Scripts/Design/StellaColorTokens.cs`
@@ -47,6 +48,7 @@ If you prefer automated setup, run this menu in Unity:
 
 - `Stella > Setup > Create Bootstrap + Stage01`
 - `Stella > Setup > Apply Startup Logo To Bootstrap`
+- `Stella > Setup > Apply Home Base Layout To Bootstrap`
 
 This creates:
 
@@ -62,21 +64,22 @@ Notes:
 - If a logo sprite exists in `Assets/Stella/UI/Logos/`, startup logo playback is enabled automatically.
 - Startup logo background uses `BaseBackground` token color.
 - Logo sprite is shown with horizontal padding (safe margin from screen edges).
-- Start button is configured to load `Stage01` via fallback (`startDestinationPage = BattleHud`, page not registered).
+- Initial page is `HomePage` (`UIPageRouter.initialPage = Home`), so title page is skipped on startup.
+- `Apply Home Base Layout To Bootstrap` updates existing `HomePage` to the base-screen layout and rewires router/start destination.
 
 ## Behavior
 
 - On scene start, `StartupFlowController` calls `UIPageRouter.ShowInitialPage()`.
 - If a startup logo is configured, it plays first and then transitions to the initial page.
-- The initial page is configurable in `UIPageRouter.initialPage` (default: `Title`).
-- Pressing Start:
+- The initial page is configurable in `UIPageRouter.initialPage` (generated setup uses `Home`).
+- `StartupFlowController.OnStartPressed()` is kept for optional title-flow usage:
   - Navigates to `startDestinationPage` if that page is registered.
   - Otherwise loads `gameplaySceneName` (default: `Stage01`).
 
 ## Notes
 
 - This is intentionally minimal so art/UI swaps from Figma do not require logic rewrites.
-- For the next step, split `TitlePage` into reusable prefabs (`TopBar`, `ActionButton`, `NavButton`).
+- The generated scene keeps `TitlePage` disabled; you can remove it entirely if not needed.
 
 ## Design tokens
 

@@ -28,15 +28,17 @@
 2. スクリプトのインポート・コンパイル完了を待つ
 3. メニュー `Stella > Setup > Create Bootstrap + Stage01` を実行
 4. ロゴ差し替え時は `Stella > Setup > Apply Startup Logo To Bootstrap` を実行
-5. `Assets/Scenes/Bootstrap.unity` を開く（自動で開く設定）
-6. Play 実行
-7. `Start` ボタンで `Stage01` へ遷移
+5. 既存シーンへ基地画面を反映する場合は `Stella > Setup > Apply Home Base Layout To Bootstrap` を実行
+6. `Assets/Scenes/Bootstrap.unity` を開く（自動で開く設定）
+7. Play 実行
+8. 起動ロゴ後、ホーム（基地）画面が表示される
 
 ## 主要スクリプト
 
 - 起動フロー: `Assets/Stella/Scripts/Flow/StartupFlowController.cs`
 - UI ページルーター/基底: `Assets/Stella/Scripts/UI/UIPageRouter.cs`, `Assets/Stella/Scripts/UI/UIPage.cs`
 - タイトルページ: `Assets/Stella/Scripts/UI/TitlePageController.cs`
+- ホーム（基地）画面: `Assets/Stella/Scripts/UI/Home/HomeBasePageController.cs`
 - ボタン見た目: `Assets/Stella/Scripts/UI/Buttons/StellaButtonView.cs`
 - デザイントークン: `Assets/Stella/Scripts/Design/StellaColorTokens.cs`
 - 自動セットアップメニュー: `Assets/Stella/Scripts/Editor/StellaProjectSetupMenu.cs`
@@ -58,7 +60,7 @@
 
 - `Assets/Stella/UI/Logos/` に Sprite がある場合、自動生成時に起動ロゴ再生を有効化
 - 起動ロゴ背景は `BaseBackground` トークン色を使用し、ロゴ画像は左右に余白を入れて表示
-- Start ボタンはフォールバック経由で `Stage01` をロード
+- 初期表示ページは `HomePage`（Title 画面はスキップ）
 - ロゴ未配置時のみ起動ロゴはプレースホルダー表示
 - `Bootstrap.unity` / `Stage01.unity` がある場合、自動生成で上書き可能
 
@@ -69,5 +71,5 @@
 - 自動射撃
 - 敵ウェーブ生成
 - 勝敗フロー
-2. Figma 正式素材への差し替え
+2. ホーム（基地）画面の正式アセット差し替え
 3. ロゴ表示時間とフェード時間の調整
