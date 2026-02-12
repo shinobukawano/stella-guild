@@ -11,6 +11,7 @@ This folder provides a minimal UI foundation and startup page flow for the iOS-f
 - `Assets/Stella/Scripts/UI/TitlePageController.cs`
 - `Assets/Stella/Scripts/UI/SimplePageController.cs`
 - `Assets/Stella/Scripts/UI/Home/HomeBasePageController.cs`
+- `Assets/Stella/Scripts/UI/Home/HomeBaseBackground3D.cs`
 - `Assets/Stella/Scripts/Flow/StartupFlowController.cs`
 - `Assets/Stella/Scripts/Design/ColorToken.cs`
 - `Assets/Stella/Scripts/Design/StellaColorTokens.cs`
@@ -66,6 +67,7 @@ Notes:
 - Logo sprite is shown with horizontal padding (safe margin from screen edges).
 - Initial page is `HomePage` (`UIPageRouter.initialPage = Home`), so title page is skipped on startup.
 - `Apply Home Base Layout To Bootstrap` updates existing `HomePage` to the base-screen layout and rewires router/start destination.
+- Home page uses a generated full-screen 3D base background rendered via `RenderTexture`.
 
 ## Behavior
 

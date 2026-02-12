@@ -38,15 +38,49 @@ namespace StellaGuild.UI.Home
         private const string RootName = "HomeBaseRoot";
         private const float TopPanelHeight = 300f;
         private const float BottomAreaHeight = 320f;
+        private const string MapViewportPath = "WorldMap3DBackground";
 
         private Font _font;
         private Sprite _circleSprite;
         private Sprite _roundedSprite;
+        private Texture2D _circleTexture;
+        private Texture2D _roundedTexture;
 
         protected override void OnInitialize()
         {
             base.OnInitialize();
             EnsureLayout();
+        }
+
+        private void OnDestroy()
+        {
+            if (_circleTexture != null)
+            {
+                if (Application.isPlaying)
+                {
+                    Destroy(_circleTexture);
+                }
+                else
+                {
+                    DestroyImmediate(_circleTexture);
+                }
+
+                _circleTexture = null;
+            }
+
+            if (_roundedTexture != null)
+            {
+                if (Application.isPlaying)
+                {
+                    Destroy(_roundedTexture);
+                }
+                else
+                {
+                    DestroyImmediate(_roundedTexture);
+                }
+
+                _roundedTexture = null;
+            }
         }
 
         [ContextMenu("Rebuild Home Base Layout")]
@@ -69,6 +103,19 @@ namespace StellaGuild.UI.Home
 
             if (transform.Find(RootName) != null)
             {
+                var root = transform.Find(RootName);
+                if (root != null && root.Find(MapViewportPath) == null)
+                {
+                    RemoveExistingLayout();
+                    BuildLayout();
+                    return;
+                }
+
+                if (root != null)
+                {
+                    EnsureMapViewportComponents(root);
+                }
+
                 return;
             }
 
@@ -122,9 +169,29 @@ namespace StellaGuild.UI.Home
             var background = root.gameObject.AddComponent<Image>();
             ConfigurePanelImage(background, StellaColorTokens.Get(ColorToken.BaseBackground));
 
+            BuildFullScreenMap(root);
             BuildTopPanel(root);
             BuildMainArea(root);
             BuildBottomButtons(root);
+        }
+
+        private void BuildFullScreenMap(RectTransform root)
+        {
+            var mapViewport = CreateRect(
+                "WorldMap3DBackground",
+                root,
+                Vector2.zero,
+                Vector2.one,
+                Vector2.zero,
+                Vector2.zero);
+            mapViewport.SetAsFirstSibling();
+
+            var mapImage = mapViewport.gameObject.AddComponent<RawImage>();
+            mapImage.color = Color.white;
+            mapImage.raycastTarget = false;
+
+            var background3D = mapViewport.gameObject.AddComponent<HomeBaseBackground3D>();
+            background3D.Initialize();
         }
 
         private void BuildTopPanel(RectTransform root)
@@ -138,7 +205,9 @@ namespace StellaGuild.UI.Home
                 new Vector2(0f, 0f));
 
             var panelImage = topPanel.gameObject.AddComponent<Image>();
-            ConfigurePanelImage(panelImage, StellaColorTokens.Get(ColorToken.SecondaryBackground));
+            var topPanelColor = StellaColorTokens.Get(ColorToken.SecondaryBackground);
+            topPanelColor.a = 0.72f;
+            ConfigurePanelImage(panelImage, topPanelColor);
 
             var header = CreateRect(
                 "Header",
@@ -148,7 +217,7 @@ namespace StellaGuild.UI.Home
                 new Vector2(0f, -76f),
                 new Vector2(0f, 0f));
             var headerImage = header.gameObject.AddComponent<Image>();
-            ConfigurePanelImage(headerImage, Color.black);
+            ConfigurePanelImage(headerImage, new Color(0f, 0f, 0f, 0.62f));
 
             var headerLabel = CreateText("HeaderLabel", header, "Status Bar", 58, StellaColorTokens.Get(ColorToken.BaseBackground), TextAnchor.MiddleCenter);
             AddTextShadow(headerLabel, new Color(0f, 0f, 0f, 0.3f));
@@ -234,6 +303,32 @@ namespace StellaGuild.UI.Home
             var badge = CreateCircle("Badge", chatButton, new Vector2(0.83f, 0.8f), 32f, StellaColorTokens.Get(ColorToken.Attention));
             var badgeText = CreateText("BadgeText", badge, "1", 18, Color.white, TextAnchor.MiddleCenter);
             AddTextShadow(badgeText, StellaColorTokens.Get(ColorToken.TextShadow));
+        }
+
+        private void EnsureMapViewportComponents(Transform root)
+        {
+            var mapViewport = root.Find(MapViewportPath);
+            if (mapViewport == null)
+            {
+                return;
+            }
+
+            var mapImage = mapViewport.GetComponent<RawImage>();
+            if (mapImage == null)
+            {
+                mapImage = mapViewport.gameObject.AddComponent<RawImage>();
+            }
+
+            mapImage.color = Color.white;
+            mapImage.raycastTarget = false;
+
+            var background3D = mapViewport.GetComponent<HomeBaseBackground3D>();
+            if (background3D == null)
+            {
+                background3D = mapViewport.gameObject.AddComponent<HomeBaseBackground3D>();
+            }
+
+            background3D.Initialize();
         }
 
         private void BuildBottomButtons(RectTransform root)
@@ -399,7 +494,7 @@ namespace StellaGuild.UI.Home
         {
             if (_circleSprite == null)
             {
-                _circleSprite = Resources.GetBuiltinResource<Sprite>("UI/Skin/Knob.psd");
+                _circleSprite = CreateCircleFallbackSprite();
             }
 
             return _circleSprite;
@@ -409,10 +504,95 @@ namespace StellaGuild.UI.Home
         {
             if (_roundedSprite == null)
             {
-                _roundedSprite = Resources.GetBuiltinResource<Sprite>("UI/Skin/Background.psd");
+                _roundedSprite = CreateRoundedFallbackSprite();
             }
 
             return _roundedSprite;
+        }
+
+        private Sprite CreateCircleFallbackSprite()
+        {
+            const int size = 128;
+            const float edge = 1.6f;
+
+            _circleTexture = new Texture2D(size, size, TextureFormat.RGBA32, false)
+            {
+                name = "RuntimeCircleSprite",
+                filterMode = FilterMode.Bilinear,
+                wrapMode = TextureWrapMode.Clamp
+            };
+
+            var colors = new Color32[size * size];
+            var center = (size - 1) * 0.5f;
+            var radius = center - 0.5f;
+
+            for (var y = 0; y < size; y++)
+            {
+                for (var x = 0; x < size; x++)
+                {
+                    var dx = x - center;
+                    var dy = y - center;
+                    var distance = Mathf.Sqrt(dx * dx + dy * dy);
+                    var alpha = Mathf.Clamp01((radius - distance) / edge);
+                    var a = (byte)Mathf.RoundToInt(alpha * 255f);
+                    colors[y * size + x] = new Color32(255, 255, 255, a);
+                }
+            }
+
+            _circleTexture.SetPixels32(colors);
+            _circleTexture.Apply(false, false);
+
+            return Sprite.Create(
+                _circleTexture,
+                new Rect(0f, 0f, size, size),
+                new Vector2(0.5f, 0.5f),
+                size,
+                0,
+                SpriteMeshType.FullRect);
+        }
+
+        private Sprite CreateRoundedFallbackSprite()
+        {
+            const int size = 64;
+            const int border = 14;
+            const float cornerRadius = 16f;
+            const float edge = 1.5f;
+
+            _roundedTexture = new Texture2D(size, size, TextureFormat.RGBA32, false)
+            {
+                name = "RuntimeRoundedSprite",
+                filterMode = FilterMode.Bilinear,
+                wrapMode = TextureWrapMode.Clamp
+            };
+
+            var colors = new Color32[size * size];
+
+            for (var y = 0; y < size; y++)
+            {
+                for (var x = 0; x < size; x++)
+                {
+                    var nx = Mathf.Abs((x + 0.5f) - size * 0.5f) - (size * 0.5f - cornerRadius);
+                    var ny = Mathf.Abs((y + 0.5f) - size * 0.5f) - (size * 0.5f - cornerRadius);
+                    var ox = Mathf.Max(nx, 0f);
+                    var oy = Mathf.Max(ny, 0f);
+                    var outside = Mathf.Sqrt(ox * ox + oy * oy);
+                    var alpha = Mathf.Clamp01((cornerRadius - outside) / edge);
+                    var a = (byte)Mathf.RoundToInt(alpha * 255f);
+                    colors[y * size + x] = new Color32(255, 255, 255, a);
+                }
+            }
+
+            _roundedTexture.SetPixels32(colors);
+            _roundedTexture.Apply(false, false);
+
+            return Sprite.Create(
+                _roundedTexture,
+                new Rect(0f, 0f, size, size),
+                new Vector2(0.5f, 0.5f),
+                size,
+                0,
+                SpriteMeshType.FullRect,
+                new Vector4(border, border, border, border));
         }
     }
 }

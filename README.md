@@ -39,6 +39,7 @@
 - UI ページルーター/基底: `Assets/Stella/Scripts/UI/UIPageRouter.cs`, `Assets/Stella/Scripts/UI/UIPage.cs`
 - タイトルページ: `Assets/Stella/Scripts/UI/TitlePageController.cs`
 - ホーム（基地）画面: `Assets/Stella/Scripts/UI/Home/HomeBasePageController.cs`
+- ホーム3D背景: `Assets/Stella/Scripts/UI/Home/HomeBaseBackground3D.cs`
 - ボタン見た目: `Assets/Stella/Scripts/UI/Buttons/StellaButtonView.cs`
 - デザイントークン: `Assets/Stella/Scripts/Design/StellaColorTokens.cs`
 - 自動セットアップメニュー: `Assets/Stella/Scripts/Editor/StellaProjectSetupMenu.cs`
@@ -61,6 +62,7 @@
 - `Assets/Stella/UI/Logos/` に Sprite がある場合、自動生成時に起動ロゴ再生を有効化
 - 起動ロゴ背景は `BaseBackground` トークン色を使用し、ロゴ画像は左右に余白を入れて表示
 - 初期表示ページは `HomePage`（Title 画面はスキップ）
+- ホーム全体の背景は `RenderTexture` を使った3D基地背景を表示
 - ロゴ未配置時のみ起動ロゴはプレースホルダー表示
 - `Bootstrap.unity` / `Stage01.unity` がある場合、自動生成で上書き可能
 
