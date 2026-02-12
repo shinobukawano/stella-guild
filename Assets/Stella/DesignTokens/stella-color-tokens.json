@@ -1,0 +1,15 @@
+{
+  "theme": "Stella Guild",
+  "sourceNodeId": "8:2334",
+  "colors": {
+    "base.background": "#FEF5E8",
+    "background.secondary": "#C6B198",
+    "point.primary": "#EACB02",
+    "accent.primary": "#02216A",
+    "attention.primary": "#9F1600",
+    "text.shadow": "#28190A",
+    "navigation.primary": "#1B2D57",
+    "main-button.primary": "#E1C41A",
+    "main-button.secondary": "#C4AF97"
+  }
+}
