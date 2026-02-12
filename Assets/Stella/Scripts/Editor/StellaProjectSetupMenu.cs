@@ -5,6 +5,7 @@ using System.IO;
 using StellaGuild.Design;
 using StellaGuild.Flow;
 using StellaGuild.UI;
+using StellaGuild.UI.Chat;
 using StellaGuild.UI.Home;
 using UnityEditor;
 using UnityEditor.SceneManagement;
@@ -138,6 +139,7 @@ namespace StellaGuild.EditorTools
             var scene = EditorSceneManager.OpenScene(BootstrapScenePath, OpenSceneMode.Single);
             var homePageObject = GameObject.Find("HomePage");
             var settingsPageObject = GameObject.Find("SettingsPage");
+            var chatPageObject = GameObject.Find("ChatPage");
             var titlePageObject = GameObject.Find("TitlePage");
             var uiRootObject = GameObject.Find("UIRoot");
             var appObject = GameObject.Find("App");
@@ -152,11 +154,21 @@ namespace StellaGuild.EditorTools
             }
 
             var homeBaseController = EnsureHomeBaseController(homePageObject);
+            if (chatPageObject == null)
+            {
+                var pageParent = homePageObject.transform.parent;
+                if (pageParent != null)
+                {
+                    chatPageObject = CreatePageRoot<ChatPageController>(pageParent, "ChatPage", new Color32(0xFE, 0xF5, 0xE8, 0xFF));
+                }
+            }
+
             var pageRouter = uiRootObject.GetComponent<UIPageRouter>();
             if (pageRouter != null)
             {
                 var settingsPage = settingsPageObject != null ? settingsPageObject.GetComponent<UIPage>() : null;
-                ConfigureHomePageEntry(pageRouter, homeBaseController, settingsPage);
+                var chatPage = chatPageObject != null ? chatPageObject.GetComponent<UIPage>() : null;
+                ConfigureHomePageEntry(pageRouter, homeBaseController, settingsPage, chatPage);
             }
 
             var startupFlow = appObject.GetComponent<StartupFlowController>();
@@ -227,12 +239,13 @@ namespace StellaGuild.EditorTools
 
             var homePage = CreatePageRoot<HomeBasePageController>(canvas.transform, "HomePage", new Color32(0xFE, 0xF5, 0xE8, 0xFF));
             var settingsPage = CreatePageRoot<SimplePageController>(canvas.transform, "SettingsPage", new Color32(0xFE, 0xF5, 0xE8, 0xFF));
+            var chatPage = CreatePageRoot<ChatPageController>(canvas.transform, "ChatPage", new Color32(0xFE, 0xF5, 0xE8, 0xFF));
 
-            CreatePageTitle(settingsPage.transform, "SETTINGS");
+            CreatePageTitle(settingsPage.transform, "設定");
 
             var uiRoot = new GameObject("UIRoot");
             var pageRouter = uiRoot.AddComponent<UIPageRouter>();
-            ConfigurePageRouter(pageRouter, homePage.GetComponent<UIPage>(), settingsPage.GetComponent<UIPage>());
+            ConfigurePageRouter(pageRouter, homePage.GetComponent<UIPage>(), settingsPage.GetComponent<UIPage>(), chatPage.GetComponent<UIPage>());
 
             var app = new GameObject("App");
             var startupFlow = app.AddComponent<StartupFlowController>();
@@ -280,7 +293,7 @@ namespace StellaGuild.EditorTools
             hasStartupLogoSprite = TryApplyStartupLogoSprite(logoImage);
             logoImage.gameObject.SetActive(hasStartupLogoSprite);
 
-            var logoLabel = CreateFullStretchText("LogoLabel", startupLogo.transform, "STELLA GUILD");
+            var logoLabel = CreateFullStretchText("LogoLabel", startupLogo.transform, "ステラギルド");
             logoLabel.fontSize = 96;
             logoLabel.alignment = TextAnchor.MiddleCenter;
             logoLabel.color = StellaColorTokens.Get(ColorToken.TextShadow);
@@ -318,15 +331,31 @@ namespace StellaGuild.EditorTools
             text.color = new Color32(0x28, 0x19, 0x0A, 0xFF);
         }
 
-        private static void ConfigurePageRouter(UIPageRouter pageRouter, UIPage homePage, UIPage settingsPage)
+        private static void ConfigurePageRouter(UIPageRouter pageRouter, UIPage homePage, UIPage settingsPage, UIPage chatPage)
         {
             var routerSerialized = new SerializedObject(pageRouter);
             routerSerialized.FindProperty("initialPage").enumValueIndex = (int)UIPageType.Home;
 
             var entries = routerSerialized.FindProperty("pageEntries");
-            entries.arraySize = 2;
-            SetRouterEntry(entries.GetArrayElementAtIndex(0), UIPageType.Home, homePage);
-            SetRouterEntry(entries.GetArrayElementAtIndex(1), UIPageType.Settings, settingsPage);
+            var pages = new List<(UIPageType pageType, UIPage page)>
+            {
+                (UIPageType.Home, homePage)
+            };
+            if (settingsPage != null)
+            {
+                pages.Add((UIPageType.Settings, settingsPage));
+            }
+
+            if (chatPage != null)
+            {
+                pages.Add((UIPageType.Chat, chatPage));
+            }
+
+            entries.arraySize = pages.Count;
+            for (var i = 0; i < pages.Count; i++)
+            {
+                SetRouterEntry(entries.GetArrayElementAtIndex(i), pages[i].pageType, pages[i].page);
+            }
 
             routerSerialized.ApplyModifiedPropertiesWithoutUndo();
         }
@@ -368,16 +397,29 @@ namespace StellaGuild.EditorTools
             return homeBaseController;
         }
 
-        private static void ConfigureHomePageEntry(UIPageRouter pageRouter, UIPage homePage, UIPage settingsPage)
+        private static void ConfigureHomePageEntry(UIPageRouter pageRouter, UIPage homePage, UIPage settingsPage, UIPage chatPage)
         {
             var routerSerialized = new SerializedObject(pageRouter);
             routerSerialized.FindProperty("initialPage").enumValueIndex = (int)UIPageType.Home;
             var entries = routerSerialized.FindProperty("pageEntries");
-            entries.arraySize = settingsPage != null ? 2 : 1;
-            SetRouterEntry(entries.GetArrayElementAtIndex(0), UIPageType.Home, homePage);
+            var pages = new List<(UIPageType pageType, UIPage page)>
+            {
+                (UIPageType.Home, homePage)
+            };
             if (settingsPage != null)
             {
-                SetRouterEntry(entries.GetArrayElementAtIndex(1), UIPageType.Settings, settingsPage);
+                pages.Add((UIPageType.Settings, settingsPage));
+            }
+
+            if (chatPage != null)
+            {
+                pages.Add((UIPageType.Chat, chatPage));
+            }
+
+            entries.arraySize = pages.Count;
+            for (var i = 0; i < pages.Count; i++)
+            {
+                SetRouterEntry(entries.GetArrayElementAtIndex(i), pages[i].pageType, pages[i].page);
             }
 
             routerSerialized.ApplyModifiedPropertiesWithoutUndo();

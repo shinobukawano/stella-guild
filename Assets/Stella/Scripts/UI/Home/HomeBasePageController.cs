@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using StellaGuild.Design;
+using StellaGuild.UI.Chat;
 using UnityEngine;
 using UnityEngine.UI;
 #if UNITY_EDITOR
@@ -21,18 +22,20 @@ namespace StellaGuild.UI.Home
 
         [SerializeField] private List<StatRow> leftStats = new()
         {
-            new StatRow { label = "Level", value = "12,345" },
-            new StatRow { label = "Power", value = "12,345" },
-            new StatRow { label = "Coins", value = "12,345" }
+            new StatRow { label = "レベル", value = "12,345" },
+            new StatRow { label = "戦力", value = "12,345" },
+            new StatRow { label = "コイン", value = "12,345" }
         };
 
         [SerializeField] private List<StatRow> rightStats = new()
         {
-            new StatRow { label = "Time", value = "12,345" },
-            new StatRow { label = "Population", value = "12,345" },
-            new StatRow { label = "Quest", value = "List" }
+            new StatRow { label = "時間", value = "12,345" },
+            new StatRow { label = "人口", value = "12,345" },
+            new StatRow { label = "クエスト", value = "一覧" }
         };
 
+        [SerializeField] private string statusBarLabel = "ステータス";
+        [SerializeField] private string centerIconFallbackLabel = "アイコン";
         [SerializeField] private string guildLabel = "ギルド";
         [SerializeField] private string worldLabel = "世界";
         [SerializeField] private string postButtonLabel = "ポスト";
@@ -42,6 +45,7 @@ namespace StellaGuild.UI.Home
         [SerializeField] private Sprite postButtonSprite;
         [SerializeField] private Sprite cargoButtonSprite;
         [SerializeField] private Sprite chatButtonSprite;
+        [SerializeField] private Sprite homeCenterIconSprite;
         [SerializeField] private bool rebuildLayout;
 
         private const string RootName = "HomeBaseRoot";
@@ -56,10 +60,13 @@ namespace StellaGuild.UI.Home
         private const float CargoButtonAnchorY = 0.96f;
         private const float CargoLabelAnchorY = 0.81f;
         private const string ButtonBaseFillName = "BaseFill";
+        private const string HomeCenterIconFileName = "icon.jpg";
         private static readonly Color32 HomeButtonBackgroundColor = new(0xC6, 0xB1, 0x98, 0xFF);
+        private static readonly Color32 HomeCircleBorderColor = new(0x28, 0x19, 0x0A, 0xFF);
         private static readonly Vector2 MainButtonIconPadding = Vector2.zero;
         private static readonly Vector2 SideButtonIconPadding = new(6f, 6f);
         private static readonly Vector2 ChatButtonIconPadding = new(14f, 14f);
+        private static readonly Vector2 HomeCenterIconPadding = new(12f, 12f);
 
         private Font _font;
         private Sprite _circleSprite;
@@ -68,6 +75,7 @@ namespace StellaGuild.UI.Home
         private Texture2D _roundedTexture;
         private readonly Dictionary<string, Sprite> _uiFileSpriteCache = new(StringComparer.OrdinalIgnoreCase);
         private readonly List<Texture2D> _uiFileTextures = new();
+        private Button _chatNavigationButton;
 
         protected override void OnInitialize()
         {
@@ -77,6 +85,12 @@ namespace StellaGuild.UI.Home
 
         private void OnDestroy()
         {
+            if (_chatNavigationButton != null)
+            {
+                _chatNavigationButton.onClick.RemoveListener(HandleChatButtonPressed);
+                _chatNavigationButton = null;
+            }
+
             if (_circleTexture != null)
             {
                 if (Application.isPlaying)
@@ -129,6 +143,7 @@ namespace StellaGuild.UI.Home
 
         private void OnValidate()
         {
+            MigrateLocalizedDefaultsIfNeeded();
             AutoAssignUiSpritesInEditor();
 
 #if UNITY_EDITOR
@@ -147,12 +162,16 @@ namespace StellaGuild.UI.Home
             EnsureTextureImportedAsSprite("Assets/Stella/UI/post.png");
             EnsureTextureImportedAsSprite("Assets/Stella/UI/cargo.png");
             EnsureTextureImportedAsSprite("Assets/Stella/UI/chat.png");
+            EnsureTextureImportedAsSprite("Assets/Stella/UI/icon.jpg");
+            EnsureTextureImportedAsSprite("Assets/Stella/UI/icon.jpeg");
 
             guildButtonSprite = LoadSpriteIfMissing(guildButtonSprite, "Assets/Stella/UI/guild.png");
             worldButtonSprite = LoadSpriteIfMissing(worldButtonSprite, "Assets/Stella/UI/world.png");
             postButtonSprite = LoadSpriteIfMissing(postButtonSprite, "Assets/Stella/UI/post.png");
             cargoButtonSprite = LoadSpriteIfMissing(cargoButtonSprite, "Assets/Stella/UI/cargo.png");
             chatButtonSprite = LoadSpriteIfMissing(chatButtonSprite, "Assets/Stella/UI/chat.png");
+            homeCenterIconSprite = LoadSpriteIfMissing(homeCenterIconSprite, "Assets/Stella/UI/icon.jpg");
+            homeCenterIconSprite = LoadSpriteIfMissing(homeCenterIconSprite, "Assets/Stella/UI/icon.jpeg");
         }
 
         private static Sprite LoadSpriteIfMissing(Sprite current, string assetPath)
@@ -204,8 +223,10 @@ namespace StellaGuild.UI.Home
                 return;
             }
 
+            ApplyTopLocalizationAndLayout(root);
             ApplyBottomLocalizationAndLayout(root);
             ApplyVisualAssets(root);
+            EnsureChatNavigationAndRegistration();
         }
 
         [ContextMenu("Rebuild Home Base Layout")]
@@ -229,9 +250,12 @@ namespace StellaGuild.UI.Home
             }
             else
             {
+                ApplyTopLocalizationAndLayout(root);
                 ApplyBottomLocalizationAndLayout(root);
                 ApplyVisualAssets(root);
             }
+
+            EnsureChatNavigationAndRegistration();
 
 #if UNITY_EDITOR
             EditorUtility.SetDirty(gameObject);
@@ -240,7 +264,7 @@ namespace StellaGuild.UI.Home
 
         private void EnsureLayout()
         {
-            MigrateBottomLabelDefaultsIfNeeded();
+            MigrateLocalizedDefaultsIfNeeded();
             AutoAssignUiSpritesInEditor();
 
             if (rebuildLayout)
@@ -264,38 +288,196 @@ namespace StellaGuild.UI.Home
                 if (root != null)
                 {
                     EnsureMapViewportComponents(root);
+                    ApplyTopLocalizationAndLayout(root);
                     ApplyBottomLocalizationAndLayout(root);
                     ApplyVisualAssets(root);
                 }
 
+                EnsureChatNavigationAndRegistration();
                 return;
             }
 
             RemovePlaceholderChildren();
             BuildLayout();
+            EnsureChatNavigationAndRegistration();
         }
 
-        private void MigrateBottomLabelDefaultsIfNeeded()
+        private void EnsureChatNavigationAndRegistration()
         {
-            if (string.Equals(guildLabel, "Guild", StringComparison.Ordinal))
+            var router = ResolvePageRouter();
+            if (router == null)
             {
-                guildLabel = "ギルド";
+                return;
             }
 
-            if (string.Equals(worldLabel, "World", StringComparison.Ordinal))
+            var chatPage = EnsureRuntimeChatPage();
+            if (chatPage != null)
             {
-                worldLabel = "世界";
+                router.RegisterRuntimePage(UIPageType.Chat, chatPage);
             }
 
-            if (string.Equals(postButtonLabel, "Post", StringComparison.Ordinal))
+            var root = transform.Find(RootName);
+            if (root != null)
             {
-                postButtonLabel = "ポスト";
+                EnsureChatButtonBinding(root);
+            }
+        }
+
+        private void EnsureChatButtonBinding(Transform root)
+        {
+            var chatButtonTransform = root.Find("MainArea/ChatButton");
+            if (chatButtonTransform == null)
+            {
+                return;
             }
 
-            if (string.Equals(cargoButtonLabel, "Cargo", StringComparison.Ordinal))
+            var chatButtonImage = chatButtonTransform.GetComponent<Image>();
+            if (chatButtonImage == null)
             {
-                cargoButtonLabel = "荷物";
+                return;
             }
+
+            var button = chatButtonTransform.GetComponent<Button>();
+            if (button == null)
+            {
+                button = chatButtonTransform.gameObject.AddComponent<Button>();
+            }
+
+            chatButtonImage.raycastTarget = true;
+            button.targetGraphic = chatButtonImage;
+            button.transition = Selectable.Transition.None;
+            button.onClick.RemoveListener(HandleChatButtonPressed);
+            button.onClick.AddListener(HandleChatButtonPressed);
+            _chatNavigationButton = button;
+        }
+
+        private ChatPageController EnsureRuntimeChatPage()
+        {
+            var pageParent = transform.parent as RectTransform;
+            if (pageParent == null)
+            {
+                return null;
+            }
+
+            var chatPageTransform = pageParent.Find("ChatPage") as RectTransform;
+            if (chatPageTransform == null)
+            {
+                chatPageTransform = CreateRect("ChatPage", pageParent, Vector2.zero, Vector2.one, Vector2.zero, Vector2.zero);
+            }
+
+            var chatPageImage = chatPageTransform.GetComponent<Image>();
+            if (chatPageImage == null)
+            {
+                chatPageImage = chatPageTransform.gameObject.AddComponent<Image>();
+            }
+
+            chatPageImage.sprite = null;
+            chatPageImage.type = Image.Type.Simple;
+            chatPageImage.color = StellaColorTokens.Get(ColorToken.BaseBackground);
+            chatPageImage.raycastTarget = false;
+
+            if (chatPageTransform.GetComponent<CanvasGroup>() == null)
+            {
+                chatPageTransform.gameObject.AddComponent<CanvasGroup>();
+            }
+
+            var chatPageController = chatPageTransform.GetComponent<ChatPageController>();
+            if (chatPageController == null)
+            {
+                chatPageController = chatPageTransform.gameObject.AddComponent<ChatPageController>();
+            }
+
+            return chatPageController;
+        }
+
+        private void HandleChatButtonPressed()
+        {
+            var router = ResolvePageRouter();
+            if (router == null)
+            {
+                return;
+            }
+
+            if (!router.Contains(UIPageType.Chat))
+            {
+                var chatPage = EnsureRuntimeChatPage();
+                if (chatPage != null)
+                {
+                    router.RegisterRuntimePage(UIPageType.Chat, chatPage);
+                }
+            }
+
+            if (router.Contains(UIPageType.Chat))
+            {
+                router.Navigate(UIPageType.Chat);
+            }
+        }
+
+        private UIPageRouter ResolvePageRouter()
+        {
+            var router = GetComponentInParent<Canvas>()?.GetComponentInChildren<UIPageRouter>(true);
+            if (router != null)
+            {
+                return router;
+            }
+
+            return FindFirstObjectByType<UIPageRouter>(FindObjectsInactive.Include);
+        }
+
+        private void MigrateLocalizedDefaultsIfNeeded()
+        {
+            statusBarLabel = ToJapaneseIfEnglish(statusBarLabel);
+            centerIconFallbackLabel = ToJapaneseIfEnglish(centerIconFallbackLabel);
+            guildLabel = ToJapaneseIfEnglish(guildLabel);
+            worldLabel = ToJapaneseIfEnglish(worldLabel);
+            postButtonLabel = ToJapaneseIfEnglish(postButtonLabel);
+            cargoButtonLabel = ToJapaneseIfEnglish(cargoButtonLabel);
+            MigrateStatRowsIfNeeded(leftStats);
+            MigrateStatRowsIfNeeded(rightStats);
+        }
+
+        private static void MigrateStatRowsIfNeeded(List<StatRow> rows)
+        {
+            if (rows == null)
+            {
+                return;
+            }
+
+            for (var i = 0; i < rows.Count; i++)
+            {
+                var row = rows[i];
+                row.label = ToJapaneseIfEnglish(row.label);
+                row.value = ToJapaneseIfEnglish(row.value);
+                rows[i] = row;
+            }
+        }
+
+        private static string ToJapaneseIfEnglish(string value)
+        {
+            if (string.IsNullOrEmpty(value))
+            {
+                return value;
+            }
+
+            return value switch
+            {
+                "Status Bar" => "ステータス",
+                "Icon" => "アイコン",
+                "Guild" => "ギルド",
+                "World" => "世界",
+                "Post" => "ポスト",
+                "Cargo" => "荷物",
+                "Level" => "レベル",
+                "Power" => "戦力",
+                "Coins" => "コイン",
+                "Time" => "時間",
+                "Population" => "人口",
+                "Quest" => "クエスト",
+                "List" => "一覧",
+                "Settings" => "設定",
+                "Start" => "開始",
+                _ => value
+            };
         }
 
         private void RemovePlaceholderChildren()
@@ -395,7 +577,7 @@ namespace StellaGuild.UI.Home
             var headerImage = header.gameObject.AddComponent<Image>();
             ConfigurePanelImage(headerImage, new Color(0f, 0f, 0f, 0.62f));
 
-            var headerLabel = CreateText("HeaderLabel", header, "Status Bar", 58, StellaColorTokens.Get(ColorToken.BaseBackground), TextAnchor.MiddleCenter);
+            var headerLabel = CreateText("HeaderLabel", header, statusBarLabel, 58, StellaColorTokens.Get(ColorToken.BaseBackground), TextAnchor.MiddleCenter);
             AddTextShadow(headerLabel, new Color(0f, 0f, 0f, 0.3f));
 
             BuildStatusColumns(topPanel);
@@ -453,11 +635,11 @@ namespace StellaGuild.UI.Home
 
         private void BuildCenterIcon(RectTransform topPanel)
         {
-            var ring = CreateCircle("CenterIconRing", topPanel, new Vector2(0.5f, 0.22f), 178f, StellaColorTokens.Get(ColorToken.TextShadow));
+            var ring = CreateCircle("CenterIconRing", topPanel, new Vector2(0.5f, 0.22f), 178f, HomeCircleBorderColor);
             var plate = CreateCircle("CenterIconPlate", topPanel, new Vector2(0.5f, 0.22f), 150f, StellaColorTokens.Get(ColorToken.MainButtonSecondary));
             plate.SetSiblingIndex(ring.GetSiblingIndex() + 1);
 
-            var iconLabel = CreateText("CenterIconLabel", plate, "Icon", 42, StellaColorTokens.Get(ColorToken.BaseBackground), TextAnchor.MiddleCenter);
+            var iconLabel = CreateText("CenterIconLabel", plate, centerIconFallbackLabel, 42, StellaColorTokens.Get(ColorToken.BaseBackground), TextAnchor.MiddleCenter);
             AddTextShadow(iconLabel, StellaColorTokens.Get(ColorToken.TextShadow));
         }
 
@@ -529,8 +711,50 @@ namespace StellaGuild.UI.Home
             SetAnchoredElement(bottom, "CargoLabel", new Vector2(SideActionAnchor.x, CargoLabelAnchorY + BottomActionGlobalYOffset));
         }
 
+        private void ApplyTopLocalizationAndLayout(Transform root)
+        {
+            var topPanel = root.Find("TopPanel");
+            if (topPanel == null)
+            {
+                return;
+            }
+
+            SetTextAtPath(topPanel, "Header/HeaderLabel", statusBarLabel);
+            SetTextAtPath(topPanel, "CenterIconPlate/CenterIconLabel", centerIconFallbackLabel);
+            ApplyStatusColumnText(topPanel.Find("LeftStats"), leftStats, false);
+            ApplyStatusColumnText(topPanel.Find("RightStats"), rightStats, true);
+        }
+
+        private void ApplyStatusColumnText(Transform column, List<StatRow> rows, bool alignRight)
+        {
+            if (column == null || rows == null)
+            {
+                return;
+            }
+
+            var prefix = alignRight ? "R" : "L";
+            var rowCount = Mathf.Min(3, rows.Count);
+            for (var i = 0; i < rowCount; i++)
+            {
+                SetTextAtPath(column, $"{prefix}Label{i}/LabelText", rows[i].label);
+                SetTextAtPath(column, $"{prefix}Value{i}/ValueText", rows[i].value);
+            }
+        }
+
         private void ApplyVisualAssets(Transform root)
         {
+            var topPanel = root.Find("TopPanel");
+            if (topPanel != null)
+            {
+                ApplyCircleColor(topPanel, "CenterIconRing", HomeCircleBorderColor);
+                var hasCenterIcon = ApplyMaskedCircleIcon(topPanel, "CenterIconPlate", "Icon", HomeCenterIconFileName, homeCenterIconSprite, HomeCenterIconPadding);
+                var centerIconLabel = topPanel.Find("CenterIconPlate/CenterIconLabel");
+                if (centerIconLabel != null)
+                {
+                    centerIconLabel.gameObject.SetActive(!hasCenterIcon);
+                }
+            }
+
             var mainArea = root.Find("MainArea");
             if (mainArea != null)
             {
@@ -583,6 +807,88 @@ namespace StellaGuild.UI.Home
             image.type = Image.Type.Simple;
             image.preserveAspect = true;
             image.color = Color.white;
+            return true;
+        }
+
+        private bool ApplyMaskedCircleIcon(
+            Transform parent,
+            string plateName,
+            string overlayName,
+            string fileName,
+            Sprite directSprite,
+            Vector2 padding)
+        {
+            var plate = parent.Find(plateName) as RectTransform;
+            if (plate == null)
+            {
+                return false;
+            }
+
+            var sprite = ResolveButtonSprite(fileName, directSprite);
+            if (sprite == null)
+            {
+                return false;
+            }
+
+            var plateImage = plate.GetComponent<Image>();
+            if (plateImage == null)
+            {
+                return false;
+            }
+
+            plateImage.sprite = GetCircleSprite();
+            plateImage.type = Image.Type.Simple;
+            plateImage.preserveAspect = false;
+
+            var mask = plate.GetComponent<Mask>();
+            if (mask == null)
+            {
+                mask = plate.gameObject.AddComponent<Mask>();
+            }
+
+            mask.showMaskGraphic = true;
+
+            var overlay = plate.Find(overlayName) as RectTransform;
+            if (overlay == null)
+            {
+                overlay = CreateRect(
+                    overlayName,
+                    plate,
+                    Vector2.zero,
+                    Vector2.one,
+                    new Vector2(padding.x, padding.y),
+                    new Vector2(-padding.x, -padding.y));
+            }
+            else
+            {
+                overlay.anchorMin = Vector2.zero;
+                overlay.anchorMax = Vector2.one;
+                overlay.offsetMin = new Vector2(padding.x, padding.y);
+                overlay.offsetMax = new Vector2(-padding.x, -padding.y);
+                overlay.anchoredPosition = Vector2.zero;
+            }
+
+            overlay.SetAsLastSibling();
+            var overlayImage = overlay.GetComponent<Image>();
+            if (overlayImage == null)
+            {
+                overlayImage = overlay.gameObject.AddComponent<Image>();
+            }
+
+            overlayImage.sprite = sprite;
+            overlayImage.type = Image.Type.Simple;
+            overlayImage.preserveAspect = false;
+            overlayImage.color = Color.white;
+            overlayImage.raycastTarget = false;
+
+            var aspectRatioFitter = overlay.GetComponent<AspectRatioFitter>();
+            if (aspectRatioFitter == null)
+            {
+                aspectRatioFitter = overlay.gameObject.AddComponent<AspectRatioFitter>();
+            }
+
+            aspectRatioFitter.aspectMode = AspectRatioFitter.AspectMode.EnvelopeParent;
+            aspectRatioFitter.aspectRatio = sprite.rect.width / Mathf.Max(1f, sprite.rect.height);
             return true;
         }
 
@@ -647,6 +953,23 @@ namespace StellaGuild.UI.Home
             {
                 legacyBorder.gameObject.SetActive(false);
             }
+        }
+
+        private void ApplyCircleColor(Transform parent, string circleName, Color color)
+        {
+            var circle = parent.Find(circleName);
+            if (circle == null)
+            {
+                return;
+            }
+
+            var image = circle.GetComponent<Image>();
+            if (image == null)
+            {
+                return;
+            }
+
+            image.color = color;
         }
 
         private bool ApplyButtonOverlaySprite(
@@ -796,6 +1119,26 @@ namespace StellaGuild.UI.Home
         private void SetBottomLabelText(Transform bottom, string labelName, string value)
         {
             var textTransform = bottom.Find($"{labelName}/Text");
+            if (textTransform == null)
+            {
+                return;
+            }
+
+            var text = textTransform.GetComponent<Text>();
+            if (text != null)
+            {
+                text.text = value;
+            }
+        }
+
+        private void SetTextAtPath(Transform parent, string relativePath, string value)
+        {
+            if (parent == null || string.IsNullOrWhiteSpace(relativePath))
+            {
+                return;
+            }
+
+            var textTransform = parent.Find(relativePath);
             if (textTransform == null)
             {
                 return;

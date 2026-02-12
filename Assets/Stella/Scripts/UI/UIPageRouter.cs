@@ -61,6 +61,32 @@ namespace StellaGuild.UI
             return _pages.ContainsKey(pageType);
         }
 
+        public void RegisterRuntimePage(UIPageType pageType, UIPage page)
+        {
+            Initialize();
+            if (page == null)
+            {
+                return;
+            }
+
+            if (_pages.TryGetValue(pageType, out var existingPage) && existingPage == page)
+            {
+                return;
+            }
+
+            if (existingPage != null && _currentPage == existingPage)
+            {
+                existingPage.Hide();
+                _currentPage = null;
+            }
+
+            _pages[pageType] = page;
+            if (_currentPage != page)
+            {
+                page.Hide();
+            }
+        }
+
         private void Initialize()
         {
             if (_initialized)

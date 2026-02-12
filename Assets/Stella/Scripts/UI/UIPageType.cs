@@ -6,6 +6,7 @@ namespace StellaGuild.UI
         Home = 1,
         BattleHud = 2,
         Result = 3,
-        Settings = 4
+        Settings = 4,
+        Chat = 5
     }
 }
