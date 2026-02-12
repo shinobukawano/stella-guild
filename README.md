@@ -27,9 +27,10 @@
 1. Unity Hub でこのフォルダを開く
 2. スクリプトのインポート・コンパイル完了を待つ
 3. メニュー `Stella > Setup > Create Bootstrap + Stage01` を実行
-4. `Assets/Scenes/Bootstrap.unity` を開く（自動で開く設定）
-5. Play 実行
-6. `Start` ボタンで `Stage01` へ遷移
+4. ロゴ差し替え時は `Stella > Setup > Apply Startup Logo To Bootstrap` を実行
+5. `Assets/Scenes/Bootstrap.unity` を開く（自動で開く設定）
+6. Play 実行
+7. `Start` ボタンで `Stage01` へ遷移
 
 ## 主要スクリプト
 
@@ -55,9 +56,10 @@
 
 ## 後続エージェント向け注意事項
 
-- 自動生成シーンでは `skipStartupLogo = true`（高速確認用）
+- `Assets/Stella/UI/Logos/` に Sprite がある場合、自動生成時に起動ロゴ再生を有効化
+- 起動ロゴ背景は `BaseBackground` トークン色を使用し、ロゴ画像は左右に余白を入れて表示
 - Start ボタンはフォールバック経由で `Stage01` をロード
-- 起動ロゴは現状プレースホルダー（本素材差し替え前提）
+- ロゴ未配置時のみ起動ロゴはプレースホルダー表示
 - `Bootstrap.unity` / `Stage01.unity` がある場合、自動生成で上書き可能
 
 ## 次のマイルストーン
@@ -68,4 +70,4 @@
 - 敵ウェーブ生成
 - 勝敗フロー
 2. Figma 正式素材への差し替え
-3. ロゴ素材導入後に `skipStartupLogo = false` へ変更
+3. ロゴ表示時間とフェード時間の調整

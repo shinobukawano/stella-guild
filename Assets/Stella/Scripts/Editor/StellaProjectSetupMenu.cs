@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using StellaGuild.Design;
 using StellaGuild.Flow;
 using StellaGuild.UI;
 using UnityEditor;
@@ -17,6 +18,9 @@ namespace StellaGuild.EditorTools
     {
         private const string BootstrapScenePath = "Assets/Scenes/Bootstrap.unity";
         private const string StageScenePath = "Assets/Scenes/Stage01.unity";
+        private const string LogoFolderPath = "Assets/Stella/UI/Logos";
+        private const string PreferredLogoPath = "Assets/Stella/UI/Logos/stella-guild-logo.png";
+        private const float StartupLogoHorizontalPadding = 120f;
 
         [MenuItem("Stella/Setup/Create Bootstrap + Stage01")]
         public static void CreateBootstrapAndStage()
@@ -39,6 +43,83 @@ namespace StellaGuild.EditorTools
             EditorUtility.DisplayDialog(
                 "Stella Setup Completed",
                 "Bootstrap and Stage01 scenes were created and added to Build Settings.",
+                "OK");
+        }
+
+        [MenuItem("Stella/Setup/Apply Startup Logo To Bootstrap")]
+        public static void ApplyStartupLogoToBootstrap()
+        {
+            if (!File.Exists(BootstrapScenePath))
+            {
+                EditorUtility.DisplayDialog(
+                    "Bootstrap Scene Not Found",
+                    "Please create the bootstrap scene first from Stella > Setup > Create Bootstrap + Stage01.",
+                    "OK");
+                return;
+            }
+
+            var logoSprite = LoadStartupLogoSprite();
+            if (logoSprite == null)
+            {
+                EditorUtility.DisplayDialog(
+                    "Logo Sprite Not Found",
+                    "No Sprite was found in Assets/Stella/UI/Logos/. Import the logo as Sprite (2D and UI) and retry.",
+                    "OK");
+                return;
+            }
+
+            var scene = EditorSceneManager.OpenScene(BootstrapScenePath, OpenSceneMode.Single);
+            var startupLogoObject = GameObject.Find("StartupLogo");
+            var appObject = GameObject.Find("App");
+
+            if (startupLogoObject == null || appObject == null)
+            {
+                EditorUtility.DisplayDialog(
+                    "Scene Structure Missing",
+                    "StartupLogo or App object is missing. Re-run Stella > Setup > Create Bootstrap + Stage01.",
+                    "OK");
+                return;
+            }
+
+            var startupLogoImage = startupLogoObject.GetComponent<Image>();
+            if (startupLogoImage == null)
+            {
+                startupLogoImage = startupLogoObject.AddComponent<Image>();
+            }
+
+            ConfigureStartupLogoBackground(startupLogoImage);
+
+            var logoImage = GetOrCreateStartupLogoImage(startupLogoObject.transform);
+            ApplyStartupLogoToImage(logoImage, logoSprite);
+            logoImage.gameObject.SetActive(true);
+
+            var logoLabelTransform = startupLogoObject.transform.Find("LogoLabel");
+            if (logoLabelTransform != null)
+            {
+                logoLabelTransform.gameObject.SetActive(false);
+            }
+
+            var startupLogoCanvasGroup = startupLogoObject.GetComponent<CanvasGroup>();
+            if (startupLogoCanvasGroup == null)
+            {
+                startupLogoCanvasGroup = startupLogoObject.AddComponent<CanvasGroup>();
+            }
+
+            var startupFlow = appObject.GetComponent<StartupFlowController>();
+            if (startupFlow != null)
+            {
+                var startupFlowSerialized = new SerializedObject(startupFlow);
+                startupFlowSerialized.FindProperty("startupLogoCanvasGroup").objectReferenceValue = startupLogoCanvasGroup;
+                startupFlowSerialized.FindProperty("skipStartupLogo").boolValue = false;
+                startupFlowSerialized.ApplyModifiedPropertiesWithoutUndo();
+            }
+
+            EditorSceneManager.MarkSceneDirty(scene);
+            EditorSceneManager.SaveScene(scene);
+
+            EditorUtility.DisplayDialog(
+                "Startup Logo Applied",
+                "Logo sprite was applied to Bootstrap and startup logo playback was enabled.",
                 "OK");
         }
 
@@ -83,7 +164,7 @@ namespace StellaGuild.EditorTools
             CreateEventSystem();
 
             var canvas = CreateCanvas();
-            var startupLogoCanvasGroup = CreateStartupLogo(canvas.transform);
+            var startupLogoCanvasGroup = CreateStartupLogo(canvas.transform, out var hasStartupLogoSprite);
 
             var titlePage = CreatePageRoot<TitlePageController>(canvas.transform, "TitlePage", new Color32(0xFE, 0xF5, 0xE8, 0xFF));
             var homePage = CreatePageRoot<SimplePageController>(canvas.transform, "HomePage", new Color32(0xFE, 0xF5, 0xE8, 0xFF));
@@ -105,7 +186,7 @@ namespace StellaGuild.EditorTools
 
             var app = new GameObject("App");
             var startupFlow = app.AddComponent<StartupFlowController>();
-            ConfigureStartupFlow(startupFlow, pageRouter, startupLogoCanvasGroup);
+            ConfigureStartupFlow(startupFlow, pageRouter, startupLogoCanvasGroup, hasStartupLogoSprite);
 
             BindButtonEvents(startButton, startupFlow.OnStartPressed);
             BindButtonEvents(settingsButton, startupFlow.OnSettingsPressed);
@@ -142,16 +223,21 @@ namespace StellaGuild.EditorTools
             return canvas;
         }
 
-        private static CanvasGroup CreateStartupLogo(Transform canvasTransform)
+        private static CanvasGroup CreateStartupLogo(Transform canvasTransform, out bool hasStartupLogoSprite)
         {
             var startupLogo = CreateFullStretchUiObject("StartupLogo", canvasTransform);
             var startupLogoImage = startupLogo.AddComponent<Image>();
-            startupLogoImage.color = new Color32(0x28, 0x19, 0x0A, 0xFF);
+            ConfigureStartupLogoBackground(startupLogoImage);
+
+            var logoImage = GetOrCreateStartupLogoImage(startupLogo.transform);
+            hasStartupLogoSprite = TryApplyStartupLogoSprite(logoImage);
+            logoImage.gameObject.SetActive(hasStartupLogoSprite);
 
             var logoLabel = CreateFullStretchText("LogoLabel", startupLogo.transform, "STELLA GUILD");
             logoLabel.fontSize = 96;
             logoLabel.alignment = TextAnchor.MiddleCenter;
-            logoLabel.color = new Color32(0xFE, 0xF5, 0xE8, 0xFF);
+            logoLabel.color = StellaColorTokens.Get(ColorToken.TextShadow);
+            logoLabel.gameObject.SetActive(!hasStartupLogoSprite);
 
             return startupLogo.AddComponent<CanvasGroup>();
         }
@@ -238,7 +324,7 @@ namespace StellaGuild.EditorTools
             entry.FindPropertyRelative("page").objectReferenceValue = page;
         }
 
-        private static void ConfigureStartupFlow(StartupFlowController startupFlow, UIPageRouter pageRouter, CanvasGroup startupLogoCanvasGroup)
+        private static void ConfigureStartupFlow(StartupFlowController startupFlow, UIPageRouter pageRouter, CanvasGroup startupLogoCanvasGroup, bool hasStartupLogoSprite)
         {
             var startupFlowSerialized = new SerializedObject(startupFlow);
             startupFlowSerialized.FindProperty("pageRouter").objectReferenceValue = pageRouter;
@@ -247,7 +333,7 @@ namespace StellaGuild.EditorTools
             startupFlowSerialized.FindProperty("startupLogoCanvasGroup").objectReferenceValue = startupLogoCanvasGroup;
             startupFlowSerialized.FindProperty("startupLogoDurationSeconds").floatValue = 1.6f;
             startupFlowSerialized.FindProperty("startupLogoFadeSeconds").floatValue = 0.35f;
-            startupFlowSerialized.FindProperty("skipStartupLogo").boolValue = true;
+            startupFlowSerialized.FindProperty("skipStartupLogo").boolValue = !hasStartupLogoSprite;
             startupFlowSerialized.ApplyModifiedPropertiesWithoutUndo();
         }
 
@@ -290,6 +376,157 @@ namespace StellaGuild.EditorTools
         private static Font GetDefaultFont()
         {
             return Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        }
+
+        private static bool TryApplyStartupLogoSprite(Image targetImage)
+        {
+            var logoSprite = LoadStartupLogoSprite();
+            if (logoSprite == null || targetImage == null)
+            {
+                return false;
+            }
+
+            ApplyStartupLogoToImage(targetImage, logoSprite);
+            return true;
+        }
+
+        private static void ApplyStartupLogoToImage(Image targetImage, Sprite logoSprite)
+        {
+            ConfigureLogoImageRect(targetImage.rectTransform);
+            targetImage.sprite = logoSprite;
+            targetImage.color = Color.white;
+            targetImage.type = Image.Type.Simple;
+            targetImage.preserveAspect = false;
+            targetImage.raycastTarget = false;
+
+            var aspectRatioFitter = targetImage.GetComponent<AspectRatioFitter>();
+            if (aspectRatioFitter == null)
+            {
+                aspectRatioFitter = targetImage.gameObject.AddComponent<AspectRatioFitter>();
+            }
+
+            aspectRatioFitter.aspectMode = AspectRatioFitter.AspectMode.FitInParent;
+            aspectRatioFitter.aspectRatio = logoSprite.rect.width / logoSprite.rect.height;
+        }
+
+        private static Sprite LoadStartupLogoSprite()
+        {
+            if (File.Exists(PreferredLogoPath))
+            {
+                EnsureTextureImportedAsSprite(PreferredLogoPath);
+                var preferred = AssetDatabase.LoadAssetAtPath<Sprite>(PreferredLogoPath);
+                if (preferred != null)
+                {
+                    return preferred;
+                }
+            }
+
+            var spriteGuids = AssetDatabase.FindAssets("t:Sprite", new[] { LogoFolderPath });
+            foreach (var spriteGuid in spriteGuids)
+            {
+                var spritePath = AssetDatabase.GUIDToAssetPath(spriteGuid);
+                var sprite = AssetDatabase.LoadAssetAtPath<Sprite>(spritePath);
+                if (sprite != null)
+                {
+                    return sprite;
+                }
+            }
+
+            var textureGuids = AssetDatabase.FindAssets("t:Texture2D", new[] { LogoFolderPath });
+            foreach (var textureGuid in textureGuids)
+            {
+                var texturePath = AssetDatabase.GUIDToAssetPath(textureGuid);
+                if (!EnsureTextureImportedAsSprite(texturePath))
+                {
+                    continue;
+                }
+
+                var sprite = AssetDatabase.LoadAssetAtPath<Sprite>(texturePath);
+                if (sprite != null)
+                {
+                    return sprite;
+                }
+            }
+
+            return null;
+        }
+
+        private static bool EnsureTextureImportedAsSprite(string assetPath)
+        {
+            var textureImporter = AssetImporter.GetAtPath(assetPath) as TextureImporter;
+            if (textureImporter == null)
+            {
+                return false;
+            }
+
+            var needsReimport = textureImporter.textureType != TextureImporterType.Sprite
+                || textureImporter.spriteImportMode != SpriteImportMode.Single
+                || textureImporter.mipmapEnabled
+                || !textureImporter.alphaIsTransparency;
+
+            if (!needsReimport)
+            {
+                return true;
+            }
+
+            textureImporter.textureType = TextureImporterType.Sprite;
+            textureImporter.spriteImportMode = SpriteImportMode.Single;
+            textureImporter.mipmapEnabled = false;
+            textureImporter.alphaIsTransparency = true;
+            textureImporter.SaveAndReimport();
+            return true;
+        }
+
+        private static void ConfigureStartupLogoBackground(Image backgroundImage)
+        {
+            if (backgroundImage == null)
+            {
+                return;
+            }
+
+            backgroundImage.sprite = null;
+            backgroundImage.color = StellaColorTokens.Get(ColorToken.BaseBackground);
+            backgroundImage.type = Image.Type.Simple;
+            backgroundImage.preserveAspect = false;
+            backgroundImage.raycastTarget = false;
+        }
+
+        private static Image GetOrCreateStartupLogoImage(Transform startupLogoTransform)
+        {
+            var existing = startupLogoTransform.Find("LogoImage");
+            if (existing != null)
+            {
+                var existingImage = existing.GetComponent<Image>();
+                if (existingImage == null)
+                {
+                    existingImage = existing.gameObject.AddComponent<Image>();
+                }
+
+                ConfigureLogoImageRect(existing.GetComponent<RectTransform>());
+                return existingImage;
+            }
+
+            var logoImageObject = new GameObject("LogoImage", typeof(RectTransform), typeof(Image));
+            var logoImageRect = logoImageObject.GetComponent<RectTransform>();
+            logoImageRect.SetParent(startupLogoTransform, false);
+            ConfigureLogoImageRect(logoImageRect);
+
+            return logoImageObject.GetComponent<Image>();
+        }
+
+        private static void ConfigureLogoImageRect(RectTransform rectTransform)
+        {
+            if (rectTransform == null)
+            {
+                return;
+            }
+
+            rectTransform.anchorMin = Vector2.zero;
+            rectTransform.anchorMax = Vector2.one;
+            rectTransform.pivot = new Vector2(0.5f, 0.5f);
+            rectTransform.offsetMin = new Vector2(StartupLogoHorizontalPadding, 0f);
+            rectTransform.offsetMax = new Vector2(-StartupLogoHorizontalPadding, 0f);
+            rectTransform.anchoredPosition = Vector2.zero;
         }
 
         private static void ApplyBuildSettings()

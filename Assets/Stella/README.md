@@ -46,6 +46,7 @@ This folder provides a minimal UI foundation and startup page flow for the iOS-f
 If you prefer automated setup, run this menu in Unity:
 
 - `Stella > Setup > Create Bootstrap + Stage01`
+- `Stella > Setup > Apply Startup Logo To Bootstrap`
 
 This creates:
 
@@ -58,7 +59,9 @@ This creates:
 Notes:
 
 - Existing `Bootstrap.unity` / `Stage01.unity` will be overwritten if you confirm.
-- `skipStartupLogo` is set to `true` in generated scene for fast iteration.
+- If a logo sprite exists in `Assets/Stella/UI/Logos/`, startup logo playback is enabled automatically.
+- Startup logo background uses `BaseBackground` token color.
+- Logo sprite is shown with horizontal padding (safe margin from screen edges).
 - Start button is configured to load `Stage01` via fallback (`startDestinationPage = BattleHud`, page not registered).
 
 ## Behavior
@@ -140,7 +143,7 @@ Notes:
 6. Tune:
    - `startupLogoDurationSeconds`
    - `startupLogoFadeSeconds`
-   - `skipStartupLogo` (for fast iteration in editor)
+   - `skipStartupLogo` (if you want to disable startup logo temporarily)
 
 ## Designer handoff
 
