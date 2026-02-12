@@ -1,8 +1,12 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using StellaGuild.Design;
 using UnityEngine;
 using UnityEngine.UI;
+#if UNITY_EDITOR
+using UnityEditor;
+#endif
 
 namespace StellaGuild.UI.Home
 {
@@ -29,22 +33,41 @@ namespace StellaGuild.UI.Home
             new StatRow { label = "Quest", value = "List" }
         };
 
-        [SerializeField] private string guildLabel = "Guild";
-        [SerializeField] private string worldLabel = "World";
-        [SerializeField] private string postButtonLabel = "Post";
-        [SerializeField] private string cargoButtonLabel = "Cargo";
+        [SerializeField] private string guildLabel = "ギルド";
+        [SerializeField] private string worldLabel = "世界";
+        [SerializeField] private string postButtonLabel = "ポスト";
+        [SerializeField] private string cargoButtonLabel = "荷物";
+        [SerializeField] private Sprite guildButtonSprite;
+        [SerializeField] private Sprite worldButtonSprite;
+        [SerializeField] private Sprite postButtonSprite;
+        [SerializeField] private Sprite cargoButtonSprite;
+        [SerializeField] private Sprite chatButtonSprite;
         [SerializeField] private bool rebuildLayout;
 
         private const string RootName = "HomeBaseRoot";
         private const float TopPanelHeight = 300f;
         private const float BottomAreaHeight = 320f;
         private const string MapViewportPath = "WorldMap3DBackground";
+        private const float SideActionButtonDiameter = 104f;
+        private static readonly Vector2 SideActionAnchor = new(0.94f, 0f);
+        private const float BottomActionGlobalYOffset = 0.08f;
+        private const float PostButtonAnchorY = 1.42f;
+        private const float PostLabelAnchorY = 1.27f;
+        private const float CargoButtonAnchorY = 0.96f;
+        private const float CargoLabelAnchorY = 0.81f;
+        private const string ButtonBaseFillName = "BaseFill";
+        private static readonly Color32 HomeButtonBackgroundColor = new(0xC6, 0xB1, 0x98, 0xFF);
+        private static readonly Vector2 MainButtonIconPadding = Vector2.zero;
+        private static readonly Vector2 SideButtonIconPadding = new(6f, 6f);
+        private static readonly Vector2 ChatButtonIconPadding = new(14f, 14f);
 
         private Font _font;
         private Sprite _circleSprite;
         private Sprite _roundedSprite;
         private Texture2D _circleTexture;
         private Texture2D _roundedTexture;
+        private readonly Dictionary<string, Sprite> _uiFileSpriteCache = new(StringComparer.OrdinalIgnoreCase);
+        private readonly List<Texture2D> _uiFileTextures = new();
 
         protected override void OnInitialize()
         {
@@ -81,6 +104,108 @@ namespace StellaGuild.UI.Home
 
                 _roundedTexture = null;
             }
+
+            for (var i = 0; i < _uiFileTextures.Count; i++)
+            {
+                var texture = _uiFileTextures[i];
+                if (texture == null)
+                {
+                    continue;
+                }
+
+                if (Application.isPlaying)
+                {
+                    Destroy(texture);
+                }
+                else
+                {
+                    DestroyImmediate(texture);
+                }
+            }
+
+            _uiFileTextures.Clear();
+            _uiFileSpriteCache.Clear();
+        }
+
+        private void OnValidate()
+        {
+            AutoAssignUiSpritesInEditor();
+
+#if UNITY_EDITOR
+            if (!Application.isPlaying)
+            {
+                ApplyEditorPreviewIfReady();
+            }
+#endif
+        }
+
+#if UNITY_EDITOR
+        private void AutoAssignUiSpritesInEditor()
+        {
+            EnsureTextureImportedAsSprite("Assets/Stella/UI/guild.png");
+            EnsureTextureImportedAsSprite("Assets/Stella/UI/world.png");
+            EnsureTextureImportedAsSprite("Assets/Stella/UI/post.png");
+            EnsureTextureImportedAsSprite("Assets/Stella/UI/cargo.png");
+            EnsureTextureImportedAsSprite("Assets/Stella/UI/chat.png");
+
+            guildButtonSprite = LoadSpriteIfMissing(guildButtonSprite, "Assets/Stella/UI/guild.png");
+            worldButtonSprite = LoadSpriteIfMissing(worldButtonSprite, "Assets/Stella/UI/world.png");
+            postButtonSprite = LoadSpriteIfMissing(postButtonSprite, "Assets/Stella/UI/post.png");
+            cargoButtonSprite = LoadSpriteIfMissing(cargoButtonSprite, "Assets/Stella/UI/cargo.png");
+            chatButtonSprite = LoadSpriteIfMissing(chatButtonSprite, "Assets/Stella/UI/chat.png");
+        }
+
+        private static Sprite LoadSpriteIfMissing(Sprite current, string assetPath)
+        {
+            if (current != null)
+            {
+                return current;
+            }
+
+            EnsureTextureImportedAsSprite(assetPath);
+            return AssetDatabase.LoadAssetAtPath<Sprite>(assetPath);
+        }
+
+        private static void EnsureTextureImportedAsSprite(string assetPath)
+        {
+            var textureImporter = AssetImporter.GetAtPath(assetPath) as TextureImporter;
+            if (textureImporter == null)
+            {
+                return;
+            }
+
+            var needsReimport = textureImporter.textureType != TextureImporterType.Sprite
+                || textureImporter.spriteImportMode != SpriteImportMode.Single
+                || textureImporter.mipmapEnabled
+                || !textureImporter.alphaIsTransparency;
+
+            if (!needsReimport)
+            {
+                return;
+            }
+
+            textureImporter.textureType = TextureImporterType.Sprite;
+            textureImporter.spriteImportMode = SpriteImportMode.Single;
+            textureImporter.mipmapEnabled = false;
+            textureImporter.alphaIsTransparency = true;
+            textureImporter.SaveAndReimport();
+        }
+#else
+        private void AutoAssignUiSpritesInEditor()
+        {
+        }
+#endif
+
+        private void ApplyEditorPreviewIfReady()
+        {
+            var root = transform.Find(RootName);
+            if (root == null)
+            {
+                return;
+            }
+
+            ApplyBottomLocalizationAndLayout(root);
+            ApplyVisualAssets(root);
         }
 
         [ContextMenu("Rebuild Home Base Layout")]
@@ -91,8 +216,33 @@ namespace StellaGuild.UI.Home
             BuildLayout();
         }
 
+        [ContextMenu("Force Apply Home Button Sprites")]
+        public void ForceApplyHomeButtonSprites()
+        {
+            AutoAssignUiSpritesInEditor();
+
+            var root = transform.Find(RootName);
+            if (root == null)
+            {
+                RemoveExistingLayout();
+                BuildLayout();
+            }
+            else
+            {
+                ApplyBottomLocalizationAndLayout(root);
+                ApplyVisualAssets(root);
+            }
+
+#if UNITY_EDITOR
+            EditorUtility.SetDirty(gameObject);
+#endif
+        }
+
         private void EnsureLayout()
         {
+            MigrateBottomLabelDefaultsIfNeeded();
+            AutoAssignUiSpritesInEditor();
+
             if (rebuildLayout)
             {
                 rebuildLayout = false;
@@ -114,6 +264,8 @@ namespace StellaGuild.UI.Home
                 if (root != null)
                 {
                     EnsureMapViewportComponents(root);
+                    ApplyBottomLocalizationAndLayout(root);
+                    ApplyVisualAssets(root);
                 }
 
                 return;
@@ -121,6 +273,29 @@ namespace StellaGuild.UI.Home
 
             RemovePlaceholderChildren();
             BuildLayout();
+        }
+
+        private void MigrateBottomLabelDefaultsIfNeeded()
+        {
+            if (string.Equals(guildLabel, "Guild", StringComparison.Ordinal))
+            {
+                guildLabel = "ギルド";
+            }
+
+            if (string.Equals(worldLabel, "World", StringComparison.Ordinal))
+            {
+                worldLabel = "世界";
+            }
+
+            if (string.Equals(postButtonLabel, "Post", StringComparison.Ordinal))
+            {
+                postButtonLabel = "ポスト";
+            }
+
+            if (string.Equals(cargoButtonLabel, "Cargo", StringComparison.Ordinal))
+            {
+                cargoButtonLabel = "荷物";
+            }
         }
 
         private void RemovePlaceholderChildren()
@@ -173,6 +348,7 @@ namespace StellaGuild.UI.Home
             BuildTopPanel(root);
             BuildMainArea(root);
             BuildBottomButtons(root);
+            ApplyVisualAssets(root);
         }
 
         private void BuildFullScreenMap(RectTransform root)
@@ -295,7 +471,7 @@ namespace StellaGuild.UI.Home
                 new Vector2(0f, BottomAreaHeight),
                 new Vector2(0f, -TopPanelHeight));
 
-            var chatButton = CreateCircle("ChatButton", mainArea, new Vector2(0.12f, 0.86f), 120f, Color.white);
+            var chatButton = CreateCircle("ChatButton", mainArea, new Vector2(0.12f, 0.86f), 120f, HomeButtonBackgroundColor);
             AddCircleBorder(chatButton, StellaColorTokens.Get(ColorToken.TextShadow), 8f);
             var chatText = CreateText("ChatDots", chatButton, "...", 52, StellaColorTokens.Get(ColorToken.TextShadow), TextAnchor.MiddleCenter);
             AddTextShadow(chatText, new Color(0f, 0f, 0f, 0.2f));
@@ -331,6 +507,341 @@ namespace StellaGuild.UI.Home
             background3D.Initialize();
         }
 
+        private void ApplyBottomLocalizationAndLayout(Transform root)
+        {
+            var bottom = root.Find("BottomArea");
+            if (bottom == null)
+            {
+                return;
+            }
+
+            SetElementActive(bottom, "GuildLabel", false);
+            SetElementActive(bottom, "WorldLabel", false);
+            SetBottomLabelText(bottom, "PostLabel", postButtonLabel);
+            SetBottomLabelText(bottom, "CargoLabel", cargoButtonLabel);
+
+            SetAnchoredElement(bottom, "GuildButton", new Vector2(0.17f, 0.33f + BottomActionGlobalYOffset), 230f);
+            SetAnchoredElement(bottom, "WorldButton", new Vector2(0.83f, 0.33f + BottomActionGlobalYOffset), 230f);
+
+            SetAnchoredElement(bottom, "PostButton", new Vector2(SideActionAnchor.x, PostButtonAnchorY + BottomActionGlobalYOffset), SideActionButtonDiameter);
+            SetAnchoredElement(bottom, "PostLabel", new Vector2(SideActionAnchor.x, PostLabelAnchorY + BottomActionGlobalYOffset));
+            SetAnchoredElement(bottom, "CargoButton", new Vector2(SideActionAnchor.x, CargoButtonAnchorY + BottomActionGlobalYOffset), SideActionButtonDiameter);
+            SetAnchoredElement(bottom, "CargoLabel", new Vector2(SideActionAnchor.x, CargoLabelAnchorY + BottomActionGlobalYOffset));
+        }
+
+        private void ApplyVisualAssets(Transform root)
+        {
+            var mainArea = root.Find("MainArea");
+            if (mainArea != null)
+            {
+                ApplyCircleButtonBase(mainArea, "ChatButton", HomeButtonBackgroundColor);
+                var hasCustomChatSprite = ApplyButtonOverlaySprite(mainArea, "ChatButton", "Icon", "chat.png", chatButtonSprite, ChatButtonIconPadding);
+                var chatDots = mainArea.Find("ChatButton/ChatDots");
+                if (chatDots != null)
+                {
+                    chatDots.gameObject.SetActive(!hasCustomChatSprite);
+                }
+            }
+
+            var bottom = root.Find("BottomArea");
+            if (bottom == null)
+            {
+                return;
+            }
+
+            ApplyCircleButtonBase(bottom, "GuildButton", HomeButtonBackgroundColor);
+            ApplyCircleButtonBase(bottom, "WorldButton", HomeButtonBackgroundColor);
+            ApplyCircleButtonBase(bottom, "PostButton", HomeButtonBackgroundColor);
+            ApplyCircleButtonBase(bottom, "CargoButton", HomeButtonBackgroundColor);
+            ApplyButtonOverlaySprite(bottom, "GuildButton", "Icon", "guild.png", guildButtonSprite, MainButtonIconPadding);
+            ApplyButtonOverlaySprite(bottom, "WorldButton", "Icon", "world.png", worldButtonSprite, MainButtonIconPadding);
+            ApplyButtonOverlaySprite(bottom, "PostButton", "Icon", "post.png", postButtonSprite, SideButtonIconPadding);
+            ApplyButtonOverlaySprite(bottom, "CargoButton", "Icon", "cargo.png", cargoButtonSprite, SideButtonIconPadding);
+        }
+
+        private bool ApplyButtonSprite(Transform parent, string elementName, string fileName, Sprite directSprite = null)
+        {
+            var element = parent.Find(elementName) as RectTransform;
+            if (element == null)
+            {
+                return false;
+            }
+
+            var image = element.GetComponent<Image>();
+            if (image == null)
+            {
+                return false;
+            }
+
+            var sprite = ResolveButtonSprite(fileName, directSprite);
+            if (sprite == null)
+            {
+                return false;
+            }
+
+            image.sprite = sprite;
+            image.type = Image.Type.Simple;
+            image.preserveAspect = true;
+            image.color = Color.white;
+            return true;
+        }
+
+        private void ApplyCircleButtonBase(Transform parent, string buttonName, Color color)
+        {
+            var button = parent.Find(buttonName) as RectTransform;
+            if (button == null)
+            {
+                return;
+            }
+
+            var image = button.GetComponent<Image>();
+            if (image == null)
+            {
+                return;
+            }
+
+            // Keep parent image transparent and render the colored base on a dedicated child.
+            image.sprite = null;
+            image.type = Image.Type.Simple;
+            image.preserveAspect = false;
+            image.color = new Color(1f, 1f, 1f, 0f);
+            image.raycastTarget = false;
+
+            var baseFillRect = button.Find(ButtonBaseFillName) as RectTransform;
+            if (baseFillRect == null)
+            {
+                baseFillRect = CreateRect(
+                    ButtonBaseFillName,
+                    button,
+                    Vector2.zero,
+                    Vector2.one,
+                    Vector2.zero,
+                    Vector2.zero);
+            }
+            else
+            {
+                baseFillRect.anchorMin = Vector2.zero;
+                baseFillRect.anchorMax = Vector2.one;
+                baseFillRect.offsetMin = Vector2.zero;
+                baseFillRect.offsetMax = Vector2.zero;
+                baseFillRect.anchoredPosition = Vector2.zero;
+            }
+
+            baseFillRect.SetAsFirstSibling();
+            var baseFillImage = baseFillRect.GetComponent<Image>();
+            if (baseFillImage == null)
+            {
+                baseFillImage = baseFillRect.gameObject.AddComponent<Image>();
+            }
+
+            baseFillImage.sprite = GetCircleSprite();
+            baseFillImage.type = Image.Type.Simple;
+            baseFillImage.preserveAspect = false;
+            baseFillImage.color = color;
+            baseFillImage.raycastTarget = false;
+
+            // Legacy layout has a filled "Border" child that can cover the base fill.
+            // Keep it disabled so the configured background color is visible.
+            var legacyBorder = button.Find("Border");
+            if (legacyBorder != null && legacyBorder.gameObject.activeSelf)
+            {
+                legacyBorder.gameObject.SetActive(false);
+            }
+        }
+
+        private bool ApplyButtonOverlaySprite(
+            Transform parent,
+            string buttonName,
+            string overlayName,
+            string fileName,
+            Sprite directSprite,
+            Vector2 padding)
+        {
+            var button = parent.Find(buttonName) as RectTransform;
+            if (button == null)
+            {
+                return false;
+            }
+
+            var sprite = ResolveButtonSprite(fileName, directSprite);
+            if (sprite == null)
+            {
+                return false;
+            }
+
+            var overlay = button.Find(overlayName) as RectTransform;
+            if (overlay == null)
+            {
+                overlay = CreateRect(
+                    overlayName,
+                    button,
+                    Vector2.zero,
+                    Vector2.one,
+                    new Vector2(padding.x, padding.y),
+                    new Vector2(-padding.x, -padding.y));
+            }
+            else
+            {
+                overlay.anchorMin = Vector2.zero;
+                overlay.anchorMax = Vector2.one;
+                overlay.offsetMin = new Vector2(padding.x, padding.y);
+                overlay.offsetMax = new Vector2(-padding.x, -padding.y);
+                overlay.anchoredPosition = Vector2.zero;
+            }
+
+            overlay.SetAsLastSibling();
+            var overlayImage = overlay.GetComponent<Image>();
+            if (overlayImage == null)
+            {
+                overlayImage = overlay.gameObject.AddComponent<Image>();
+            }
+
+            overlayImage.sprite = sprite;
+            overlayImage.type = Image.Type.Simple;
+            overlayImage.preserveAspect = true;
+            overlayImage.color = Color.white;
+            overlayImage.raycastTarget = false;
+            return true;
+        }
+
+        private Sprite ResolveButtonSprite(string fileName, Sprite directSprite)
+        {
+#if UNITY_EDITOR
+            if (!Application.isPlaying)
+            {
+                var assetPath = "Assets/Stella/UI/" + fileName;
+                EnsureTextureImportedAsSprite(assetPath);
+                var editorSprite = AssetDatabase.LoadAssetAtPath<Sprite>(assetPath);
+                if (editorSprite != null)
+                {
+                    return editorSprite;
+                }
+            }
+#endif
+
+            if (directSprite != null)
+            {
+                return directSprite;
+            }
+
+            return LoadSpriteFromUiFile(fileName);
+        }
+
+        private Sprite LoadSpriteFromUiFile(string fileName)
+        {
+            if (string.IsNullOrWhiteSpace(fileName))
+            {
+                return null;
+            }
+
+            if (_uiFileSpriteCache.TryGetValue(fileName, out var cached))
+            {
+                return cached;
+            }
+
+            var filePath = Path.Combine(Application.dataPath, "Stella", "UI", fileName);
+            if (!File.Exists(filePath))
+            {
+                _uiFileSpriteCache[fileName] = null;
+                return null;
+            }
+
+            byte[] bytes;
+            try
+            {
+                bytes = File.ReadAllBytes(filePath);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning("Failed to read image file " + filePath + ": " + ex.Message, this);
+                _uiFileSpriteCache[fileName] = null;
+                return null;
+            }
+
+            var texture = new Texture2D(2, 2, TextureFormat.RGBA32, false)
+            {
+                name = "RuntimeUI_" + fileName,
+                filterMode = FilterMode.Bilinear,
+                wrapMode = TextureWrapMode.Clamp
+            };
+
+            if (!ImageConversion.LoadImage(texture, bytes, false))
+            {
+                if (Application.isPlaying)
+                {
+                    Destroy(texture);
+                }
+                else
+                {
+                    DestroyImmediate(texture);
+                }
+
+                _uiFileSpriteCache[fileName] = null;
+                return null;
+            }
+
+            var sprite = Sprite.Create(
+                texture,
+                new Rect(0f, 0f, texture.width, texture.height),
+                new Vector2(0.5f, 0.5f),
+                100f,
+                0,
+                SpriteMeshType.FullRect);
+
+            _uiFileTextures.Add(texture);
+            _uiFileSpriteCache[fileName] = sprite;
+            return sprite;
+        }
+
+        private void SetBottomLabelText(Transform bottom, string labelName, string value)
+        {
+            var textTransform = bottom.Find($"{labelName}/Text");
+            if (textTransform == null)
+            {
+                return;
+            }
+
+            var text = textTransform.GetComponent<Text>();
+            if (text != null)
+            {
+                text.text = value;
+            }
+        }
+
+        private void SetAnchoredElement(Transform parent, string childName, Vector2 anchor, float size = -1f)
+        {
+            var element = parent.Find(childName) as RectTransform;
+            if (element == null)
+            {
+                return;
+            }
+
+            element.anchorMin = anchor;
+            element.anchorMax = anchor;
+            element.anchoredPosition = Vector2.zero;
+
+            if (size > 0f)
+            {
+                element.sizeDelta = new Vector2(size, size);
+            }
+        }
+
+        private void SetElementActive(Transform parent, string childName, bool active)
+        {
+            var element = parent.Find(childName);
+            if (element == null)
+            {
+                return;
+            }
+
+            if (element.gameObject.activeSelf == active)
+            {
+                return;
+            }
+
+            element.gameObject.SetActive(active);
+        }
+
         private void BuildBottomButtons(RectTransform root)
         {
             var bottom = CreateRect(
@@ -341,24 +852,20 @@ namespace StellaGuild.UI.Home
                 new Vector2(0f, 0f),
                 new Vector2(0f, BottomAreaHeight));
 
-            var leftMain = CreateCircle("GuildButton", bottom, new Vector2(0.17f, 0.33f), 230f, StellaColorTokens.Get(ColorToken.MainButtonPrimary));
+            var leftMain = CreateCircle("GuildButton", bottom, new Vector2(0.17f, 0.33f + BottomActionGlobalYOffset), 230f, HomeButtonBackgroundColor);
             AddCircleBorder(leftMain, StellaColorTokens.Get(ColorToken.TextShadow), 8f);
-            var leftLabel = CreateBottomLabel("GuildLabel", bottom, guildLabel, new Vector2(0.17f, 0.18f));
-            AddTextStroke(leftLabel);
 
-            var rightMain = CreateCircle("WorldButton", bottom, new Vector2(0.83f, 0.33f), 230f, StellaColorTokens.Get(ColorToken.Point));
+            var rightMain = CreateCircle("WorldButton", bottom, new Vector2(0.83f, 0.33f + BottomActionGlobalYOffset), 230f, HomeButtonBackgroundColor);
             AddCircleBorder(rightMain, StellaColorTokens.Get(ColorToken.TextShadow), 8f);
-            var rightLabel = CreateBottomLabel("WorldLabel", bottom, worldLabel, new Vector2(0.83f, 0.18f));
-            AddTextStroke(rightLabel);
 
-            var postButton = CreateCircle("PostButton", bottom, new Vector2(0.9f, 0.76f), 120f, StellaColorTokens.Get(ColorToken.Attention));
+            var postButton = CreateCircle("PostButton", bottom, new Vector2(SideActionAnchor.x, PostButtonAnchorY + BottomActionGlobalYOffset), SideActionButtonDiameter, HomeButtonBackgroundColor);
             AddCircleBorder(postButton, StellaColorTokens.Get(ColorToken.TextShadow), 6f);
-            var postLabelText = CreateBottomLabel("PostLabel", bottom, postButtonLabel, new Vector2(0.9f, 0.62f), 46);
+            var postLabelText = CreateBottomLabel("PostLabel", bottom, postButtonLabel, new Vector2(SideActionAnchor.x, PostLabelAnchorY + BottomActionGlobalYOffset), 42);
             AddTextStroke(postLabelText);
 
-            var cargoButton = CreateCircle("CargoButton", bottom, new Vector2(0.9f, 0.48f), 120f, StellaColorTokens.Get(ColorToken.MainButtonSecondary));
+            var cargoButton = CreateCircle("CargoButton", bottom, new Vector2(SideActionAnchor.x, CargoButtonAnchorY + BottomActionGlobalYOffset), SideActionButtonDiameter, HomeButtonBackgroundColor);
             AddCircleBorder(cargoButton, StellaColorTokens.Get(ColorToken.TextShadow), 6f);
-            var cargoLabelText = CreateBottomLabel("CargoLabel", bottom, cargoButtonLabel, new Vector2(0.9f, 0.34f), 46);
+            var cargoLabelText = CreateBottomLabel("CargoLabel", bottom, cargoButtonLabel, new Vector2(SideActionAnchor.x, CargoLabelAnchorY + BottomActionGlobalYOffset), 42);
             AddTextStroke(cargoLabelText);
         }
 

@@ -3469,10 +3469,15 @@ MonoBehaviour:
     value: 12,345
   - label: Quest
     value: List
-  guildLabel: Guild
-  worldLabel: World
-  postButtonLabel: Post
-  cargoButtonLabel: Cargo
+  guildLabel: ギルド
+  worldLabel: 世界
+  postButtonLabel: ポスト
+  cargoButtonLabel: 荷物
+  guildButtonSprite: {fileID: 21300000, guid: b623177266795405c9d45cec2487ec1a, type: 3}
+  worldButtonSprite: {fileID: 21300000, guid: 2ce5cf687ab2b46d68282989a56fcfb4, type: 3}
+  postButtonSprite: {fileID: 21300000, guid: 790fce1bf4d1f4534b37275975399a48, type: 3}
+  cargoButtonSprite: {fileID: 21300000, guid: 2d57b6c7490084d168e423d5c9f1cebd, type: 3}
+  chatButtonSprite: {fileID: 21300000, guid: a1b6eb15e1a9648fcbd6edb1f3df8ba6, type: 3}
   rebuildLayout: 0
 --- !u!1 &1065834196
 GameObject:
