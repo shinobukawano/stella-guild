@@ -26973,6 +26973,8 @@ MonoBehaviour:
   cargoButtonSprite: {fileID: 21300000, guid: 2d57b6c7490084d168e423d5c9f1cebd, type: 3}
   chatButtonSprite: {fileID: 21300000, guid: a1b6eb15e1a9648fcbd6edb1f3df8ba6, type: 3}
   homeCenterIconSprite: {fileID: 21300000, guid: 4766b608cbdb843a9b006ab119b08a7f, type: 3}
+  homeBgmClip: {fileID: 8300000, guid: 2e02fec2730af4d349988e1e2ac12be9, type: 3}
+  homeBgmVolume: 0.55
   rebuildLayout: 0
 --- !u!1 &1038167082
 GameObject:

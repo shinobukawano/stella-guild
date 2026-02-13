@@ -4,6 +4,7 @@ using System.IO;
 using StellaGuild.Design;
 using StellaGuild.UI.Chat;
 using UnityEngine;
+using UnityEngine.Video;
 using UnityEngine.UI;
 #if ENABLE_INPUT_SYSTEM
 using UnityEngine.InputSystem;
@@ -49,6 +50,8 @@ namespace StellaGuild.UI.Home
         [SerializeField] private Sprite cargoButtonSprite;
         [SerializeField] private Sprite chatButtonSprite;
         [SerializeField] private Sprite homeCenterIconSprite;
+        [SerializeField] private AudioClip homeBgmClip;
+        [SerializeField, Range(0f, 1f)] private float homeBgmVolume = 0.55f;
         [SerializeField] private bool rebuildLayout;
 
         private const string RootName = "HomeBaseRoot";
@@ -99,6 +102,14 @@ namespace StellaGuild.UI.Home
         private static readonly Vector2 SideButtonIconPadding = new(2f, 2f);
         private static readonly Vector2 ChatButtonIconPadding = new(8f, 8f);
         private static readonly Vector2 HomeCenterIconPadding = new(8f, 8f);
+        private static readonly string[] HomeBgmAssetPaths =
+        {
+            "Assets/Stella/Sound/home.wav",
+            "Assets/Stella/Sound/home.mp3",
+            "Assets/Stella/Sound/home.ogg",
+            "Assets/Stella/Sound/home.m4a",
+        };
+        private static readonly HashSet<string> LoggedInvalidAudioImportPaths = new(StringComparer.OrdinalIgnoreCase);
 
         private Font _font;
         private Sprite _circleSprite;
@@ -110,11 +121,17 @@ namespace StellaGuild.UI.Home
         private Button _chatNavigationButton;
         private RectTransform _chatButtonRect;
         private RectTransform _chatTapHotspotRect;
+        private AudioSource _homeBgmAudioSource;
+        private bool _homeBgmMissingWarningLogged;
+        private VideoPlayer _homeBgmVideoPlayer;
+        private bool _homeBgmVideoPrepared;
+        private bool _homeBgmVideoLoadFailed;
 
         protected override void OnInitialize()
         {
             base.OnInitialize();
             EnsureLayout();
+            EnsureHomeBgmPlayback();
         }
 
         private void Update()
@@ -132,6 +149,16 @@ namespace StellaGuild.UI.Home
 
             _chatButtonRect = null;
             _chatTapHotspotRect = null;
+            _homeBgmAudioSource = null;
+            _homeBgmVideoPrepared = false;
+            _homeBgmVideoLoadFailed = false;
+            if (_homeBgmVideoPlayer != null)
+            {
+                _homeBgmVideoPlayer.prepareCompleted -= HandleHomeBgmVideoPrepared;
+                _homeBgmVideoPlayer.errorReceived -= HandleHomeBgmVideoError;
+                _homeBgmVideoPlayer.Stop();
+                _homeBgmVideoPlayer = null;
+            }
 
             if (_circleTexture != null)
             {
@@ -214,6 +241,7 @@ namespace StellaGuild.UI.Home
             chatButtonSprite = LoadSpriteIfMissing(chatButtonSprite, "Assets/Stella/UI/chat.png");
             homeCenterIconSprite = LoadSpriteIfMissing(homeCenterIconSprite, "Assets/Stella/UI/icon.jpg");
             homeCenterIconSprite = LoadSpriteIfMissing(homeCenterIconSprite, "Assets/Stella/UI/icon.jpeg");
+            homeBgmClip = LoadAudioClipIfMissing(homeBgmClip, HomeBgmAssetPaths);
         }
 
         private static Sprite LoadSpriteIfMissing(Sprite current, string assetPath)
@@ -225,6 +253,62 @@ namespace StellaGuild.UI.Home
 
             EnsureTextureImportedAsSprite(assetPath);
             return AssetDatabase.LoadAssetAtPath<Sprite>(assetPath);
+        }
+
+        private static AudioClip LoadAudioClipIfMissing(AudioClip current, params string[] assetPaths)
+        {
+            if (IsUsableAudioClip(current))
+            {
+                return current;
+            }
+
+            if (assetPaths == null || assetPaths.Length == 0)
+            {
+                return null;
+            }
+
+            for (var i = 0; i < assetPaths.Length; i++)
+            {
+                var path = assetPaths[i];
+                if (string.IsNullOrWhiteSpace(path))
+                {
+                    continue;
+                }
+
+                var clip = AssetDatabase.LoadAssetAtPath<AudioClip>(path);
+                if (clip != null)
+                {
+                    return clip;
+                }
+
+                WarnIfAudioAssetIsNotImportable(path);
+            }
+
+            return null;
+        }
+
+        private static void WarnIfAudioAssetIsNotImportable(string assetPath)
+        {
+            var importer = AssetImporter.GetAtPath(assetPath);
+            if (importer == null)
+            {
+                return;
+            }
+
+            if (importer is AudioImporter)
+            {
+                return;
+            }
+
+            if (!LoggedInvalidAudioImportPaths.Add(assetPath))
+            {
+                return;
+            }
+
+            Debug.LogWarning(
+                "Audio asset is not imported as AudioClip: "
+                + assetPath
+                + ". Convert to .wav/.mp3 or fix the import settings.");
         }
 
         private static void EnsureTextureImportedAsSprite(string assetPath)
@@ -353,6 +437,202 @@ namespace StellaGuild.UI.Home
             RemovePlaceholderChildren();
             BuildLayout();
             EnsureChatNavigationAndRegistration();
+        }
+
+        private void EnsureHomeBgmPlayback()
+        {
+            if (!Application.isPlaying)
+            {
+                return;
+            }
+
+            EnsureAudioListenerExists();
+
+            var playbackClip = homeBgmClip;
+            if (!IsUsableAudioClip(playbackClip))
+            {
+                playbackClip = null;
+            }
+
+            if (_homeBgmAudioSource == null)
+            {
+                _homeBgmAudioSource = GetComponent<AudioSource>();
+            }
+
+            if (_homeBgmAudioSource == null)
+            {
+                _homeBgmAudioSource = gameObject.AddComponent<AudioSource>();
+            }
+
+            if (playbackClip == null)
+            {
+                EnsureHomeBgmVideoPlayback();
+
+                if (!_homeBgmMissingWarningLogged)
+                {
+                    Debug.LogWarning(
+                        "Home BGM clip is missing. Assign one of: "
+                        + string.Join(", ", HomeBgmAssetPaths)
+                        + " (m4a URL playback fallback enabled).",
+                        this);
+                    _homeBgmMissingWarningLogged = true;
+                }
+
+                return;
+            }
+
+            if (_homeBgmVideoPlayer != null && _homeBgmVideoPlayer.isPlaying)
+            {
+                _homeBgmVideoPlayer.Stop();
+            }
+
+            _homeBgmMissingWarningLogged = false;
+
+            _homeBgmAudioSource.playOnAwake = false;
+            _homeBgmAudioSource.loop = true;
+            _homeBgmAudioSource.spatialBlend = 0f;
+            _homeBgmAudioSource.volume = Mathf.Clamp01(homeBgmVolume);
+
+            if (_homeBgmAudioSource.clip != playbackClip)
+            {
+                _homeBgmAudioSource.clip = playbackClip;
+            }
+
+            if (!_homeBgmAudioSource.isPlaying)
+            {
+                _homeBgmAudioSource.Play();
+            }
+        }
+
+        private static bool IsUsableAudioClip(AudioClip clip)
+        {
+            if (clip == null)
+            {
+                return false;
+            }
+
+            if (clip.loadState == AudioDataLoadState.Failed)
+            {
+                return false;
+            }
+
+            return clip.samples > 0 && clip.channels > 0 && clip.frequency > 0 && clip.length > 0f;
+        }
+
+        private void EnsureHomeBgmVideoPlayback()
+        {
+            if (_homeBgmVideoLoadFailed)
+            {
+                return;
+            }
+
+            var filePath = Path.Combine(Application.dataPath, "Stella", "Sound", "home.m4a");
+            if (!File.Exists(filePath))
+            {
+                _homeBgmVideoLoadFailed = true;
+                Debug.LogWarning("Home BGM fallback file was not found: " + filePath, this);
+                return;
+            }
+
+            if (_homeBgmAudioSource == null)
+            {
+                _homeBgmAudioSource = GetComponent<AudioSource>();
+            }
+
+            if (_homeBgmAudioSource == null)
+            {
+                _homeBgmAudioSource = gameObject.AddComponent<AudioSource>();
+            }
+
+            if (_homeBgmVideoPlayer == null)
+            {
+                _homeBgmVideoPlayer = GetComponent<VideoPlayer>();
+            }
+
+            if (_homeBgmVideoPlayer == null)
+            {
+                _homeBgmVideoPlayer = gameObject.AddComponent<VideoPlayer>();
+            }
+
+            _homeBgmAudioSource.playOnAwake = false;
+            _homeBgmAudioSource.loop = true;
+            _homeBgmAudioSource.spatialBlend = 0f;
+            _homeBgmAudioSource.volume = Mathf.Clamp01(homeBgmVolume);
+
+            _homeBgmVideoPlayer.playOnAwake = false;
+            _homeBgmVideoPlayer.isLooping = true;
+            _homeBgmVideoPlayer.skipOnDrop = true;
+            _homeBgmVideoPlayer.waitForFirstFrame = false;
+            _homeBgmVideoPlayer.renderMode = VideoRenderMode.APIOnly;
+            _homeBgmVideoPlayer.source = VideoSource.Url;
+            _homeBgmVideoPlayer.audioOutputMode = VideoAudioOutputMode.AudioSource;
+            _homeBgmVideoPlayer.SetTargetAudioSource(0, _homeBgmAudioSource);
+            _homeBgmVideoPlayer.EnableAudioTrack(0, true);
+            _homeBgmVideoPlayer.SetDirectAudioMute(0, false);
+            _homeBgmVideoPlayer.SetDirectAudioVolume(0, Mathf.Clamp01(homeBgmVolume));
+
+            var fileUri = new Uri(filePath).AbsoluteUri;
+            if (!string.Equals(_homeBgmVideoPlayer.url, fileUri, StringComparison.Ordinal))
+            {
+                _homeBgmVideoPrepared = false;
+                _homeBgmVideoPlayer.url = fileUri;
+            }
+
+            _homeBgmVideoPlayer.prepareCompleted -= HandleHomeBgmVideoPrepared;
+            _homeBgmVideoPlayer.errorReceived -= HandleHomeBgmVideoError;
+            _homeBgmVideoPlayer.prepareCompleted += HandleHomeBgmVideoPrepared;
+            _homeBgmVideoPlayer.errorReceived += HandleHomeBgmVideoError;
+
+            if (_homeBgmVideoPrepared)
+            {
+                if (!_homeBgmVideoPlayer.isPlaying)
+                {
+                    _homeBgmVideoPlayer.Play();
+                }
+
+                return;
+            }
+
+            if (!_homeBgmVideoPlayer.isPrepared)
+            {
+                _homeBgmVideoPlayer.Prepare();
+                return;
+            }
+
+            _homeBgmVideoPrepared = true;
+            _homeBgmVideoPlayer.Play();
+        }
+
+        private void HandleHomeBgmVideoPrepared(VideoPlayer source)
+        {
+            _homeBgmVideoPrepared = true;
+            if (source != null && !source.isPlaying)
+            {
+                source.Play();
+            }
+        }
+
+        private void HandleHomeBgmVideoError(VideoPlayer source, string message)
+        {
+            _homeBgmVideoLoadFailed = true;
+            Debug.LogWarning("Home BGM fallback video playback failed: " + message, this);
+        }
+
+        private void EnsureAudioListenerExists()
+        {
+            var existingListener = FindFirstObjectByType<AudioListener>(FindObjectsInactive.Include);
+            if (existingListener != null)
+            {
+                return;
+            }
+
+            var listener = GetComponent<AudioListener>();
+            if (listener == null)
+            {
+                listener = gameObject.AddComponent<AudioListener>();
+            }
+
+            listener.enabled = true;
         }
 
         private void EnsureChatNavigationAndRegistration()
