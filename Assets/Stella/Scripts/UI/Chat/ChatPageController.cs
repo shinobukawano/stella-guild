@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using StellaGuild.Design;
@@ -13,6 +14,18 @@ namespace StellaGuild.UI.Chat
     [RequireComponent(typeof(CanvasGroup))]
     public sealed class ChatPageController : UIPage
     {
+        private readonly struct ChatMessageEntry
+        {
+            public ChatMessageEntry(bool isLeft, string text)
+            {
+                IsLeft = isLeft;
+                Text = text;
+            }
+
+            public bool IsLeft { get; }
+            public string Text { get; }
+        }
+
         [SerializeField] private UIPageRouter pageRouter;
         [SerializeField] private string statusBarText = "ステータスバー";
         [SerializeField] private string tabAllText = "全体";
@@ -26,11 +39,15 @@ namespace StellaGuild.UI.Chat
         [SerializeField] private Sprite rightSpeakerIconSprite;
         [SerializeField] private bool rebuildLayout;
 
-        private const string RootName = "ChatPageRoot_v20260213_refined_readable";
+        private const string RootName = "ChatPageRoot_v20260213_inputsend_v2";
         private const float ChatTextScale = 1.12f;
         private const float MessageRowHeight = 122f;
         private const float MessageIconDiameter = 84f;
         private const float MessageBubbleHalfHeight = 40f;
+        private const float MessageBottomOffsetY = -30f;
+        private const float MessageRowSpacing = 110f;
+        private const int MaxVisibleRows = 5;
+        private const int MaxHistoryCount = 50;
         private const string LeftSpeakerIconAssetPath = "Assets/Stella/UI/icon.jpg";
         private const string RightSpeakerIconAssetPath = "Assets/Stella/UI/icon-ume.png";
         private const string LeftSpeakerIconFileName = "icon.jpg";
@@ -49,6 +66,11 @@ namespace StellaGuild.UI.Chat
         private Texture2D _roundedTexture;
         private Texture2D _circleTexture;
         private Button _backButton;
+        private Button _sendButton;
+        private InputField _messageInputField;
+        private RectTransform _messageArea;
+        private Coroutine _reactivateInputCoroutine;
+        private readonly List<ChatMessageEntry> _messageHistory = new();
         private readonly Dictionary<string, Sprite> _uiFileSpriteCache = new(StringComparer.OrdinalIgnoreCase);
         private readonly List<Texture2D> _uiFileTextures = new();
 
@@ -64,6 +86,23 @@ namespace StellaGuild.UI.Chat
             {
                 _backButton.onClick.RemoveListener(HandleBackPressed);
                 _backButton = null;
+            }
+
+            if (_sendButton != null)
+            {
+                _sendButton.onClick.RemoveListener(HandleSendPressed);
+                _sendButton = null;
+            }
+
+            if (_messageInputField != null)
+            {
+                _messageInputField = null;
+            }
+
+            if (_reactivateInputCoroutine != null)
+            {
+                StopCoroutine(_reactivateInputCoroutine);
+                _reactivateInputCoroutine = null;
             }
 
             if (_roundedTexture != null)
@@ -134,6 +173,7 @@ namespace StellaGuild.UI.Chat
             ApplyTexts(root);
             ApplyMessageIcons(root);
             EnsureBackButtonBinding(root);
+            EnsureInputBindings(root);
             ApplyTopSafeArea(root);
         }
 
@@ -163,6 +203,7 @@ namespace StellaGuild.UI.Chat
                 ApplyTexts(root);
                 ApplyMessageIcons(root);
                 EnsureBackButtonBinding(root);
+                EnsureInputBindings(root);
                 ApplyTopSafeArea(root);
                 return;
             }
@@ -225,6 +266,7 @@ namespace StellaGuild.UI.Chat
             ApplyTexts(root);
             ApplyMessageIcons(root);
             EnsureBackButtonBinding(root);
+            EnsureInputBindings(root);
             ApplyTopSafeArea(root);
         }
 
@@ -389,7 +431,7 @@ namespace StellaGuild.UI.Chat
 
         private void BuildMessageArea(RectTransform root)
         {
-            var area = CreateRect(
+            _messageArea = CreateRect(
                 "MessageArea",
                 root,
                 new Vector2(0f, 0f),
@@ -397,13 +439,71 @@ namespace StellaGuild.UI.Chat
                 new Vector2(24f, 210f),
                 new Vector2(-24f, -290f));
 
-            CreateMessageRow(area, "Row1", 300f, true, leftMessageText);
-            CreateMessageRow(area, "Row2", 190f, false, rightMessageText);
-            CreateMessageRow(area, "Row3", 80f, false, rightMessageText);
-            CreateMessageRow(area, "Row4", -30f, true, leftMessageText);
+            EnsureMessageHistoryInitialized();
+            RebuildMessageRows();
         }
 
-        private void CreateMessageRow(RectTransform parent, string name, float offsetY, bool isLeftIcon, string message)
+        private void EnsureMessageHistoryInitialized()
+        {
+            if (!Application.isPlaying)
+            {
+                _messageHistory.Clear();
+            }
+
+            if (_messageHistory.Count > 0)
+            {
+                return;
+            }
+
+            _messageHistory.Add(new ChatMessageEntry(true, leftMessageText));
+            _messageHistory.Add(new ChatMessageEntry(false, rightMessageText));
+            _messageHistory.Add(new ChatMessageEntry(false, rightMessageText));
+            _messageHistory.Add(new ChatMessageEntry(true, leftMessageText));
+        }
+
+        private void RebuildMessageRows()
+        {
+            if (_messageArea == null)
+            {
+                return;
+            }
+
+            EnsureMessageHistoryInitialized();
+
+            for (var i = _messageArea.childCount - 1; i >= 0; i--)
+            {
+                var child = _messageArea.GetChild(i);
+                if (Application.isPlaying)
+                {
+                    Destroy(child.gameObject);
+                }
+                else
+                {
+                    DestroyImmediate(child.gameObject);
+                }
+            }
+
+            if (_messageHistory.Count == 0)
+            {
+                return;
+            }
+
+            var leftIcon = ResolveSpeakerSprite(LeftSpeakerIconFileName, leftSpeakerIconSprite);
+            var rightIcon = ResolveSpeakerSprite(RightSpeakerIconFileName, rightSpeakerIconSprite);
+
+            var firstVisibleIndex = Mathf.Max(0, _messageHistory.Count - MaxVisibleRows);
+            var visibleCount = _messageHistory.Count - firstVisibleIndex;
+            var firstOffsetY = MessageBottomOffsetY + (visibleCount - 1) * MessageRowSpacing;
+            for (var i = 0; i < visibleCount; i++)
+            {
+                var entry = _messageHistory[firstVisibleIndex + i];
+                var speakerSprite = entry.IsLeft ? leftIcon : rightIcon;
+                var offsetY = firstOffsetY - i * MessageRowSpacing;
+                CreateMessageRow(_messageArea, "Row" + (i + 1), offsetY, entry.IsLeft, entry.Text, speakerSprite);
+            }
+        }
+
+        private void CreateMessageRow(RectTransform parent, string name, float offsetY, bool isLeftIcon, string message, Sprite speakerSprite)
         {
             var row = CreateRect(
                 name,
@@ -432,6 +532,7 @@ namespace StellaGuild.UI.Chat
             iconBorder.useGraphicAlpha = true;
 
             CreateText("IconLabel", icon, iconText, 28, BorderColor, TextAnchor.MiddleCenter);
+            ApplyMessageAvatar(icon, speakerSprite);
 
             var bubble = CreateRect(
                 "Bubble",
@@ -506,23 +607,60 @@ namespace StellaGuild.UI.Chat
             inputImage.sprite = GetRoundedSprite();
             inputImage.type = Image.Type.Sliced;
             inputImage.color = Color.white;
-            inputImage.raycastTarget = false;
+            inputImage.raycastTarget = true;
 
             var inputBorder = inputBubble.gameObject.AddComponent<Outline>();
             inputBorder.effectColor = BorderColor;
             inputBorder.effectDistance = new Vector2(1f, -1f);
             inputBorder.useGraphicAlpha = true;
 
+            var inputText = CreateText("InputText", inputBubble, string.Empty, 38, BorderColor, TextAnchor.MiddleLeft);
+            var inputTextRect = inputText.rectTransform;
+            inputTextRect.offsetMin = new Vector2(32f, 0f);
+            inputTextRect.offsetMax = new Vector2(-108f, 0f);
+            inputText.horizontalOverflow = HorizontalWrapMode.Wrap;
+            inputText.verticalOverflow = VerticalWrapMode.Truncate;
+            inputText.resizeTextForBestFit = false;
+
             var placeholder = CreateText("Placeholder", inputBubble, inputPlaceholder, 38, BorderColor, TextAnchor.MiddleLeft);
             var placeholderRect = placeholder.rectTransform;
             placeholderRect.offsetMin = new Vector2(32f, 0f);
             placeholderRect.offsetMax = new Vector2(-108f, 0f);
+            placeholder.color = new Color32(0x6E, 0x62, 0x56, 0xFF);
 
-            var send = CreateText("SendIcon", inputBubble, "▶", 58, Color.black, TextAnchor.MiddleCenter);
+            var inputField = inputBubble.gameObject.AddComponent<InputField>();
+            inputField.textComponent = inputText;
+            inputField.placeholder = placeholder;
+            inputField.contentType = InputField.ContentType.Standard;
+            inputField.lineType = InputField.LineType.SingleLine;
+            inputField.characterLimit = 120;
+            inputField.targetGraphic = inputImage;
+            inputField.transition = Selectable.Transition.None;
+            inputField.customCaretColor = true;
+            inputField.caretColor = BorderColor;
+            inputField.selectionColor = new Color32(0x3A, 0x2A, 0x19, 0x66);
+
+            var sendButton = CreateRect(
+                "SendButton",
+                inputBubble,
+                new Vector2(1f, 0f),
+                new Vector2(1f, 1f),
+                new Vector2(-96f, 0f),
+                Vector2.zero);
+
+            var sendButtonImage = sendButton.gameObject.AddComponent<Image>();
+            sendButtonImage.color = new Color(1f, 1f, 1f, 0.01f);
+            sendButtonImage.raycastTarget = true;
+
+            var sendButtonComponent = sendButton.gameObject.AddComponent<Button>();
+            sendButtonComponent.targetGraphic = sendButtonImage;
+            sendButtonComponent.transition = Selectable.Transition.None;
+
+            var send = CreateText("SendIcon", sendButton, "▶", 58, Color.black, TextAnchor.MiddleCenter);
             var sendRect = send.rectTransform;
-            sendRect.anchorMin = new Vector2(1f, 0f);
-            sendRect.anchorMax = new Vector2(1f, 1f);
-            sendRect.offsetMin = new Vector2(-96f, 0f);
+            sendRect.anchorMin = Vector2.zero;
+            sendRect.anchorMax = Vector2.one;
+            sendRect.offsetMin = Vector2.zero;
             sendRect.offsetMax = Vector2.zero;
         }
 
@@ -533,14 +671,11 @@ namespace StellaGuild.UI.Chat
             SetTextAtPath(root, "Tabs/GuildTab/Label", tabGuildText);
             SetTextAtPath(root, "Tabs/RoomTab/Label", tabRoomText);
             SetTextAtPath(root, "InputArea/InputBubble/Placeholder", inputPlaceholder);
-            SetTextAtPath(root, "MessageArea/Row1/IconCircle/IconLabel", iconText);
-            SetTextAtPath(root, "MessageArea/Row2/IconCircle/IconLabel", iconText);
-            SetTextAtPath(root, "MessageArea/Row3/IconCircle/IconLabel", iconText);
-            SetTextAtPath(root, "MessageArea/Row4/IconCircle/IconLabel", iconText);
-            SetTextAtPath(root, "MessageArea/Row1/Bubble/MessageText", leftMessageText);
-            SetTextAtPath(root, "MessageArea/Row2/Bubble/MessageText", rightMessageText);
-            SetTextAtPath(root, "MessageArea/Row3/Bubble/MessageText", rightMessageText);
-            SetTextAtPath(root, "MessageArea/Row4/Bubble/MessageText", leftMessageText);
+
+            if (_messageInputField != null && _messageInputField.placeholder is Text placeholderText)
+            {
+                placeholderText.text = inputPlaceholder;
+            }
         }
 
         private void ApplyMessageIcons(RectTransform root)
@@ -550,24 +685,12 @@ namespace StellaGuild.UI.Chat
                 return;
             }
 
-            var leftIcon = ResolveSpeakerSprite(LeftSpeakerIconFileName, leftSpeakerIconSprite);
-            var rightIcon = ResolveSpeakerSprite(RightSpeakerIconFileName, rightSpeakerIconSprite);
-
-            ApplyMessageIconToRow(root, "MessageArea/Row1/IconCircle", leftIcon);
-            ApplyMessageIconToRow(root, "MessageArea/Row2/IconCircle", rightIcon);
-            ApplyMessageIconToRow(root, "MessageArea/Row3/IconCircle", rightIcon);
-            ApplyMessageIconToRow(root, "MessageArea/Row4/IconCircle", leftIcon);
-        }
-
-        private void ApplyMessageIconToRow(RectTransform root, string iconPath, Sprite sprite)
-        {
-            var iconCircle = root.Find(iconPath) as RectTransform;
-            if (iconCircle == null)
+            if (_messageArea == null)
             {
-                return;
+                _messageArea = root.Find("MessageArea") as RectTransform;
             }
 
-            ApplyMessageAvatar(iconCircle, sprite);
+            RebuildMessageRows();
         }
 
         private void ApplyMessageAvatar(RectTransform iconCircle, Sprite sprite)
@@ -812,6 +935,100 @@ namespace StellaGuild.UI.Chat
             button.onClick.RemoveListener(HandleBackPressed);
             button.onClick.AddListener(HandleBackPressed);
             _backButton = button;
+        }
+
+        private void EnsureInputBindings(RectTransform root)
+        {
+            var inputBubble = root.Find("InputArea/InputBubble");
+            if (inputBubble != null)
+            {
+                _messageInputField = inputBubble.GetComponent<InputField>();
+                if (_messageInputField != null && _messageInputField.placeholder is Text placeholderText)
+                {
+                    placeholderText.text = inputPlaceholder;
+                }
+            }
+
+            var sendTransform = root.Find("InputArea/InputBubble/SendButton");
+            if (sendTransform == null)
+            {
+                return;
+            }
+
+            var sendImage = sendTransform.GetComponent<Image>();
+            var sendButton = sendTransform.GetComponent<Button>();
+            if (sendButton == null)
+            {
+                sendButton = sendTransform.gameObject.AddComponent<Button>();
+            }
+
+            sendButton.targetGraphic = sendImage;
+            sendButton.transition = Selectable.Transition.None;
+            sendButton.onClick.RemoveListener(HandleSendPressed);
+            sendButton.onClick.AddListener(HandleSendPressed);
+            _sendButton = sendButton;
+        }
+
+        private void HandleSendPressed()
+        {
+            TrySendCurrentMessage();
+        }
+
+        private void TrySendCurrentMessage()
+        {
+            if (_messageInputField == null)
+            {
+                return;
+            }
+
+            var message = _messageInputField.text?.Trim();
+            if (string.IsNullOrEmpty(message))
+            {
+                _messageInputField.ActivateInputField();
+                return;
+            }
+
+            _messageHistory.Add(new ChatMessageEntry(true, message));
+            if (_messageHistory.Count > MaxHistoryCount)
+            {
+                _messageHistory.RemoveAt(0);
+            }
+
+            _messageInputField.DeactivateInputField();
+            _messageInputField.text = string.Empty;
+            _messageInputField.MoveTextEnd(false);
+            _messageInputField.ForceLabelUpdate();
+            RebuildMessageRows();
+            ScheduleInputReactivate();
+        }
+
+        private void ScheduleInputReactivate()
+        {
+            if (!Application.isPlaying || !isActiveAndEnabled || _messageInputField == null)
+            {
+                return;
+            }
+
+            if (_reactivateInputCoroutine != null)
+            {
+                StopCoroutine(_reactivateInputCoroutine);
+            }
+
+            _reactivateInputCoroutine = StartCoroutine(ReactivateInputFieldNextFrame());
+        }
+
+        private IEnumerator ReactivateInputFieldNextFrame()
+        {
+            yield return null;
+            _reactivateInputCoroutine = null;
+
+            if (_messageInputField == null || !_messageInputField.isActiveAndEnabled || !_messageInputField.interactable)
+            {
+                yield break;
+            }
+
+            _messageInputField.ActivateInputField();
+            _messageInputField.MoveTextEnd(false);
         }
 
         private void HandleBackPressed()
