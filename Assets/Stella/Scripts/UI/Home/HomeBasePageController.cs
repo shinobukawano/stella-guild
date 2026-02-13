@@ -5,6 +5,9 @@ using StellaGuild.Design;
 using StellaGuild.UI.Chat;
 using UnityEngine;
 using UnityEngine.UI;
+#if ENABLE_INPUT_SYSTEM
+using UnityEngine.InputSystem;
+#endif
 #if UNITY_EDITOR
 using UnityEditor;
 #endif
@@ -50,18 +53,32 @@ namespace StellaGuild.UI.Home
 
         private const string RootName = "HomeBaseRoot";
         private const string MapViewportPath = "WorldMap3DBackground";
-        private const string LayoutSignatureName = "LayoutSignature_v20260213";
+        private const string LayoutSignatureName = "LayoutSignature_v20260213_refined";
         private const float DesignWidth = 404f;
         private const float DesignHeight = 874f;
-        private const float MainButtonDiameter = 104f;
-        private const float SideActionButtonDiameter = 86f;
+        private const float MainButtonDiameter = 112f;
+        private const float SideActionButtonDiameter = 98f;
+        private const float ChatButtonDiameter = 68f;
+        private const float ChatBadgeDiameter = 22f;
+        private const float SideActionButtonCenterX = 352f;
+        private const float PostButtonCenterY = 694f;
+        private const float CargoButtonCenterY = 610f;
+        private const float SideActionLabelWidth = 120f;
+        private const float SideActionLabelHeight = 56f;
+        private const float SideActionLabelYOffset = 15f;
+        private const int SideActionLabelFontSize = 50;
+        private const float HomeTextScale = 1.12f;
         private const string ButtonBaseFillName = "BaseFill";
+        private const string ChatTapCatcherName = "TapCatcher";
+        private const string ChatTapHotspotName = "ChatTapHotspot";
+        private const string TopSafeAreaFillName = "TopSafeAreaFill";
+        private const float ChatTapHotspotPadding = 18f;
         private const string HomeCenterIconFileName = "icon.jpg";
         private static readonly Color32 HomeButtonBackgroundColor = new(0xC6, 0xB1, 0x98, 0xFF);
         private static readonly Color32 HomeCircleBorderColor = new(0x28, 0x19, 0x0A, 0xFF);
         private static readonly Color32 StatusBarBackgroundColor = new(0x00, 0x00, 0x00, 0xFF);
         private static readonly Vector2 MainButtonIconPadding = Vector2.zero;
-        private static readonly Vector2 SideButtonIconPadding = new(6f, 6f);
+        private static readonly Vector2 SideButtonIconPadding = new(2f, 2f);
         private static readonly Vector2 ChatButtonIconPadding = new(8f, 8f);
         private static readonly Vector2 HomeCenterIconPadding = new(8f, 8f);
 
@@ -73,11 +90,18 @@ namespace StellaGuild.UI.Home
         private readonly Dictionary<string, Sprite> _uiFileSpriteCache = new(StringComparer.OrdinalIgnoreCase);
         private readonly List<Texture2D> _uiFileTextures = new();
         private Button _chatNavigationButton;
+        private RectTransform _chatButtonRect;
+        private RectTransform _chatTapHotspotRect;
 
         protected override void OnInitialize()
         {
             base.OnInitialize();
             EnsureLayout();
+        }
+
+        private void Update()
+        {
+            HandleChatTapFallback();
         }
 
         private void OnDestroy()
@@ -87,6 +111,9 @@ namespace StellaGuild.UI.Home
                 _chatNavigationButton.onClick.RemoveListener(HandleChatButtonPressed);
                 _chatNavigationButton = null;
             }
+
+            _chatButtonRect = null;
+            _chatTapHotspotRect = null;
 
             if (_circleTexture != null)
             {
@@ -315,6 +342,7 @@ namespace StellaGuild.UI.Home
             var root = FindLayoutRoot();
             if (root != null)
             {
+                ApplyTopSafeArea(root);
                 EnsureChatButtonBinding(root);
             }
 
@@ -331,22 +359,109 @@ namespace StellaGuild.UI.Home
             }
         }
 
-        private void EnsureChatButtonBinding(Transform root)
+        private void ApplyTopSafeArea(RectTransform root)
         {
-            var chatButtonTransform = root.Find("MainArea/ChatButton");
-            if (chatButtonTransform == null)
+            if (root == null)
             {
                 return;
             }
 
-            var chatButtonImage = chatButtonTransform.GetComponent<Image>();
-            var button = chatButtonTransform.GetComponent<Button>();
-            if (button == null)
+            var topInset = GetTopSafeInsetInCanvasUnits(root);
+            var topPanel = root.Find("TopPanel") as RectTransform;
+            if (topPanel != null)
             {
-                button = chatButtonTransform.gameObject.AddComponent<Button>();
+                topPanel.offsetMin = new Vector2(0f, -topInset);
+                topPanel.offsetMax = new Vector2(0f, -topInset);
             }
 
-            var targetGraphic = chatButtonTransform.Find(ButtonBaseFillName)?.GetComponent<Image>();
+            var safeFill = root.Find(TopSafeAreaFillName) as RectTransform;
+            if (safeFill == null)
+            {
+                safeFill = CreateRect(
+                    TopSafeAreaFillName,
+                    root,
+                    new Vector2(0f, 1f),
+                    new Vector2(1f, 1f),
+                    new Vector2(0f, -topInset),
+                    Vector2.zero);
+            }
+            else
+            {
+                safeFill.anchorMin = new Vector2(0f, 1f);
+                safeFill.anchorMax = new Vector2(1f, 1f);
+                safeFill.offsetMin = new Vector2(0f, -topInset);
+                safeFill.offsetMax = Vector2.zero;
+            }
+
+            var fillImage = safeFill.GetComponent<Image>();
+            if (fillImage == null)
+            {
+                fillImage = safeFill.gameObject.AddComponent<Image>();
+            }
+
+            ConfigurePanelImage(fillImage, StatusBarBackgroundColor);
+            safeFill.gameObject.SetActive(topInset > 0.5f);
+
+            if (topPanel != null)
+            {
+                safeFill.SetSiblingIndex(Mathf.Max(0, topPanel.GetSiblingIndex()));
+            }
+        }
+
+        private static float GetTopSafeInsetInCanvasUnits(RectTransform root)
+        {
+            if (ShouldIgnoreTopSafeInsetOnIos())
+            {
+                return 0f;
+            }
+
+            if (root == null)
+            {
+                return 0f;
+            }
+
+            var topInsetPixels = Mathf.Max(0f, Screen.height - Screen.safeArea.yMax);
+            if (topInsetPixels <= 0.01f)
+            {
+                return 0f;
+            }
+
+            var canvas = root.GetComponentInParent<Canvas>();
+            if (canvas == null)
+            {
+                return topInsetPixels;
+            }
+
+            return topInsetPixels / Mathf.Max(0.0001f, canvas.scaleFactor);
+        }
+
+        private static bool ShouldIgnoreTopSafeInsetOnIos()
+        {
+#if UNITY_IOS && !UNITY_EDITOR
+            return true;
+#else
+            return false;
+#endif
+        }
+
+        private void EnsureChatButtonBinding(Transform root)
+        {
+            var chatButtonRect = root.Find("MainArea/ChatButton") as RectTransform;
+            if (chatButtonRect == null)
+            {
+                return;
+            }
+
+            _chatButtonRect = chatButtonRect;
+
+            var chatButtonImage = chatButtonRect.GetComponent<Image>();
+            var button = chatButtonRect.GetComponent<Button>();
+            if (button == null)
+            {
+                button = chatButtonRect.gameObject.AddComponent<Button>();
+            }
+
+            var targetGraphic = chatButtonRect.Find(ButtonBaseFillName)?.GetComponent<Image>();
             if (targetGraphic == null)
             {
                 targetGraphic = chatButtonImage;
@@ -367,7 +482,228 @@ namespace StellaGuild.UI.Home
             button.transition = Selectable.Transition.None;
             button.onClick.RemoveListener(HandleChatButtonPressed);
             button.onClick.AddListener(HandleChatButtonPressed);
-            _chatNavigationButton = button;
+
+            var tapCatcher = chatButtonRect.Find(ChatTapCatcherName) as RectTransform;
+            if (tapCatcher == null)
+            {
+                tapCatcher = CreateRect(ChatTapCatcherName, chatButtonRect, Vector2.zero, Vector2.one, Vector2.zero, Vector2.zero);
+            }
+            else
+            {
+                tapCatcher.anchorMin = Vector2.zero;
+                tapCatcher.anchorMax = Vector2.one;
+                tapCatcher.offsetMin = Vector2.zero;
+                tapCatcher.offsetMax = Vector2.zero;
+                tapCatcher.anchoredPosition = Vector2.zero;
+            }
+
+            tapCatcher.SetAsLastSibling();
+            var tapImage = tapCatcher.GetComponent<Image>();
+            if (tapImage == null)
+            {
+                tapImage = tapCatcher.gameObject.AddComponent<Image>();
+            }
+
+            tapImage.sprite = null;
+            tapImage.type = Image.Type.Simple;
+            tapImage.color = new Color(1f, 1f, 1f, 0.003f);
+            tapImage.raycastTarget = true;
+
+            var tapButton = tapCatcher.GetComponent<Button>();
+            if (tapButton == null)
+            {
+                tapButton = tapCatcher.gameObject.AddComponent<Button>();
+            }
+
+            tapButton.targetGraphic = tapImage;
+            tapButton.transition = Selectable.Transition.None;
+            tapButton.onClick.RemoveListener(HandleChatButtonPressed);
+            tapButton.onClick.AddListener(HandleChatButtonPressed);
+            _chatNavigationButton = tapButton;
+            EnsureRootChatHotspotBinding(root, chatButtonRect);
+        }
+
+        private void EnsureRootChatHotspotBinding(Transform root, RectTransform chatButtonRect)
+        {
+            if (root == null || chatButtonRect == null)
+            {
+                _chatTapHotspotRect = null;
+                return;
+            }
+
+            var mainArea = root.Find("MainArea") as RectTransform;
+            if (mainArea == null)
+            {
+                _chatTapHotspotRect = null;
+                return;
+            }
+
+            var hotspot = mainArea.Find(ChatTapHotspotName) as RectTransform;
+            if (hotspot == null)
+            {
+                hotspot = CreateRect(ChatTapHotspotName, mainArea, Vector2.zero, Vector2.one, Vector2.zero, Vector2.zero);
+            }
+
+            hotspot.anchorMin = chatButtonRect.anchorMin;
+            hotspot.anchorMax = chatButtonRect.anchorMax;
+            hotspot.offsetMin = chatButtonRect.offsetMin - new Vector2(ChatTapHotspotPadding, ChatTapHotspotPadding);
+            hotspot.offsetMax = chatButtonRect.offsetMax + new Vector2(ChatTapHotspotPadding, ChatTapHotspotPadding);
+            hotspot.anchoredPosition = chatButtonRect.anchoredPosition;
+            hotspot.localScale = Vector3.one;
+            hotspot.localRotation = Quaternion.identity;
+            hotspot.SetAsLastSibling();
+
+            var hotspotImage = hotspot.GetComponent<Image>();
+            if (hotspotImage == null)
+            {
+                hotspotImage = hotspot.gameObject.AddComponent<Image>();
+            }
+
+            hotspotImage.sprite = null;
+            hotspotImage.type = Image.Type.Simple;
+            hotspotImage.color = new Color(1f, 1f, 1f, 0.003f);
+            hotspotImage.raycastTarget = true;
+
+            var hotspotButton = hotspot.GetComponent<Button>();
+            if (hotspotButton == null)
+            {
+                hotspotButton = hotspot.gameObject.AddComponent<Button>();
+            }
+
+            hotspotButton.targetGraphic = hotspotImage;
+            hotspotButton.transition = Selectable.Transition.None;
+            hotspotButton.onClick.RemoveListener(HandleChatButtonPressed);
+            hotspotButton.onClick.AddListener(HandleChatButtonPressed);
+            _chatTapHotspotRect = hotspot;
+        }
+
+        private void HandleChatTapFallback()
+        {
+            if (!gameObject.activeInHierarchy)
+            {
+                return;
+            }
+
+            var canvasGroup = GetComponent<CanvasGroup>();
+            if (canvasGroup != null && !canvasGroup.interactable)
+            {
+                return;
+            }
+
+            if (_chatButtonRect == null || _chatTapHotspotRect == null)
+            {
+                var root = FindLayoutRoot();
+                if (root == null)
+                {
+                    return;
+                }
+
+                EnsureChatButtonBinding(root);
+                if (_chatButtonRect == null && _chatTapHotspotRect == null)
+                {
+                    return;
+                }
+            }
+
+            if (!TryGetPointerDownPosition(out var pointerPosition))
+            {
+                return;
+            }
+
+            if (ContainsPointer(_chatTapHotspotRect, pointerPosition) || ContainsPointer(_chatButtonRect, pointerPosition))
+            {
+                HandleChatButtonPressed();
+            }
+        }
+
+        private static bool ContainsPointer(RectTransform rect, Vector2 pointerPosition)
+        {
+            if (rect == null || !rect.gameObject.activeInHierarchy)
+            {
+                return false;
+            }
+
+            var eventCamera = ResolveEventCamera(rect);
+            return RectTransformUtility.RectangleContainsScreenPoint(rect, pointerPosition, eventCamera);
+        }
+
+        private static Camera ResolveEventCamera(Component component)
+        {
+            if (component == null)
+            {
+                return null;
+            }
+
+            var canvas = component.GetComponentInParent<Canvas>();
+            if (canvas == null)
+            {
+                return null;
+            }
+
+            return canvas.renderMode == RenderMode.ScreenSpaceOverlay ? null : canvas.worldCamera;
+        }
+
+        private static bool TryGetPointerDownPosition(out Vector2 pointerPosition)
+        {
+            pointerPosition = default;
+
+#if ENABLE_INPUT_SYSTEM
+            var pointer = Pointer.current;
+            if (pointer != null && pointer.press.wasPressedThisFrame)
+            {
+                pointerPosition = pointer.position.ReadValue();
+                return true;
+            }
+
+            var touchscreen = Touchscreen.current;
+            if (touchscreen != null)
+            {
+                var touch = touchscreen.primaryTouch;
+                if (touch.press.wasPressedThisFrame || touch.phase.ReadValue() == UnityEngine.InputSystem.TouchPhase.Began)
+                {
+                    pointerPosition = touch.position.ReadValue();
+                    return true;
+                }
+
+                var touches = touchscreen.touches;
+                for (var i = 0; i < touches.Count; i++)
+                {
+                    var extraTouch = touches[i];
+                    if (extraTouch.press.wasPressedThisFrame || extraTouch.phase.ReadValue() == UnityEngine.InputSystem.TouchPhase.Began)
+                    {
+                        pointerPosition = extraTouch.position.ReadValue();
+                        return true;
+                    }
+                }
+            }
+
+            var mouse = Mouse.current;
+            if (mouse != null && mouse.leftButton.wasPressedThisFrame)
+            {
+                pointerPosition = mouse.position.ReadValue();
+                return true;
+            }
+#endif
+
+#if ENABLE_LEGACY_INPUT_MANAGER
+            if (Input.touchCount > 0)
+            {
+                var touch = Input.GetTouch(0);
+                if (touch.phase == TouchPhase.Began)
+                {
+                    pointerPosition = touch.position;
+                    return true;
+                }
+            }
+
+            if (Input.GetMouseButtonDown(0))
+            {
+                pointerPosition = Input.mousePosition;
+                return true;
+            }
+#endif
+
+            return false;
         }
 
         private ChatPageController EnsureRuntimeChatPage()
@@ -412,24 +748,46 @@ namespace StellaGuild.UI.Home
         private void HandleChatButtonPressed()
         {
             var router = ResolvePageRouter();
-            if (router == null)
+            var navigated = false;
+            if (router != null)
+            {
+                if (!router.Contains(UIPageType.Chat))
+                {
+                    var chatPage = EnsureRuntimeChatPage();
+                    if (chatPage != null)
+                    {
+                        router.RegisterRuntimePage(UIPageType.Chat, chatPage);
+                    }
+                }
+
+                if (router.Contains(UIPageType.Chat))
+                {
+                    router.Navigate(UIPageType.Chat);
+                    navigated = true;
+                }
+            }
+
+            if (!navigated)
+            {
+                ForceNavigateToChatWithoutRouter();
+            }
+        }
+
+        private void ForceNavigateToChatWithoutRouter()
+        {
+            var chatPage = EnsureRuntimeChatPage();
+            if (chatPage == null)
+            {
+                chatPage = FindFirstObjectByType<ChatPageController>(FindObjectsInactive.Include);
+            }
+
+            if (chatPage == null)
             {
                 return;
             }
 
-            if (!router.Contains(UIPageType.Chat))
-            {
-                var chatPage = EnsureRuntimeChatPage();
-                if (chatPage != null)
-                {
-                    router.RegisterRuntimePage(UIPageType.Chat, chatPage);
-                }
-            }
-
-            if (router.Contains(UIPageType.Chat))
-            {
-                router.Navigate(UIPageType.Chat);
-            }
+            Hide();
+            chatPage.Show();
         }
 
         private UIPageRouter ResolvePageRouter()
@@ -558,16 +916,28 @@ namespace StellaGuild.UI.Home
 
         private RectTransform FindLayoutRoot()
         {
-            for (var i = 0; i < transform.childCount; i++)
+            RectTransform fallback = null;
+            for (var i = transform.childCount - 1; i >= 0; i--)
             {
                 var child = transform.GetChild(i);
                 if (child.name == RootName)
                 {
-                    return child as RectTransform;
+                    if (!child.gameObject.activeInHierarchy)
+                    {
+                        fallback ??= child as RectTransform;
+                        continue;
+                    }
+
+                    if (child.Find(LayoutSignatureName) != null)
+                    {
+                        return child as RectTransform;
+                    }
+
+                    fallback ??= child as RectTransform;
                 }
             }
 
-            return null;
+            return fallback;
         }
 
         private bool HasDuplicateLayoutRoots()
@@ -657,7 +1027,7 @@ namespace StellaGuild.UI.Home
             var headerImage = header.gameObject.AddComponent<Image>();
             ConfigurePanelImage(headerImage, StatusBarBackgroundColor);
 
-            var headerLabel = CreateText("HeaderLabel", header, statusBarLabel, 58, StellaColorTokens.Get(ColorToken.BaseBackground), TextAnchor.MiddleCenter);
+            var headerLabel = CreateText("HeaderLabel", header, statusBarLabel, 62, StellaColorTokens.Get(ColorToken.BaseBackground), TextAnchor.MiddleCenter);
             AddTextShadow(headerLabel, new Color(0f, 0f, 0f, 0.24f));
             header.SetAsLastSibling();
 
@@ -674,13 +1044,13 @@ namespace StellaGuild.UI.Home
         private void BuildStatusColumn(RectTransform parent, List<StatRow> rows, bool alignRight)
         {
             var column = CreateRect(alignRight ? "RightStats" : "LeftStats", parent, Vector2.zero, Vector2.one, Vector2.zero, Vector2.zero);
-            var labelStartX = alignRight ? 262f : 0f;
-            var valueStartX = alignRight ? 291f : 30f;
+            var labelStartX = alignRight ? 240f : 0f;
+            var valueStartX = alignRight ? 280f : 40f;
             const float rowStartY = 71f;
-            const float rowSpacing = 31.2f;
-            const float labelWidth = 32f;
-            const float valueWidth = 112f;
-            const float rowHeight = 22.3f;
+            const float rowSpacing = 31.5f;
+            const float labelWidth = 38f;
+            const float valueWidth = 124f;
+            const float rowHeight = 25f;
 
             for (var i = 0; i < Mathf.Min(3, rows.Count); i++)
             {
@@ -696,7 +1066,7 @@ namespace StellaGuild.UI.Home
                     rowHeight);
                 var labelImage = labelRect.gameObject.AddComponent<Image>();
                 ConfigureRoundedImage(labelImage, Color.black);
-                CreateText("LabelText", labelRect, row.label, 13, StellaColorTokens.Get(ColorToken.BaseBackground), TextAnchor.MiddleCenter);
+                CreateText("LabelText", labelRect, row.label, 16, StellaColorTokens.Get(ColorToken.BaseBackground), TextAnchor.MiddleCenter);
 
                 var valueRect = CreateDesignRect(
                     $"{(alignRight ? "R" : "L")}Value{i}",
@@ -707,7 +1077,7 @@ namespace StellaGuild.UI.Home
                     rowHeight);
                 var valueImage = valueRect.gameObject.AddComponent<Image>();
                 ConfigureRoundedImage(valueImage, Color.white);
-                CreateText("ValueText", valueRect, row.value, 28, StellaColorTokens.Get(ColorToken.TextShadow), TextAnchor.MiddleCenter);
+                CreateText("ValueText", valueRect, row.value, 32, StellaColorTokens.Get(ColorToken.TextShadow), TextAnchor.MiddleCenter);
             }
         }
 
@@ -717,20 +1087,23 @@ namespace StellaGuild.UI.Home
             var plate = CreateDesignCircle("CenterIconPlate", topPanel, 202f, 109f, 68f, HomeButtonBackgroundColor);
             plate.SetSiblingIndex(ring.GetSiblingIndex() + 1);
 
-            var iconLabel = CreateText("CenterIconLabel", plate, centerIconFallbackLabel, 42, StellaColorTokens.Get(ColorToken.BaseBackground), TextAnchor.MiddleCenter);
+            var iconLabel = CreateText("CenterIconLabel", plate, centerIconFallbackLabel, 46, StellaColorTokens.Get(ColorToken.BaseBackground), TextAnchor.MiddleCenter);
             AddTextShadow(iconLabel, StellaColorTokens.Get(ColorToken.TextShadow));
         }
 
         private void BuildMainArea(RectTransform root)
         {
             var mainArea = CreateRect("MainArea", root, Vector2.zero, Vector2.one, Vector2.zero, Vector2.zero);
-            var chatButton = CreateDesignCircle("ChatButton", mainArea, 47f, 247f, 60f, HomeButtonBackgroundColor);
+            const float chatButtonCenterX = 47f;
+            const float chatButtonCenterY = 247f;
+
+            var chatButton = CreateDesignCircle("ChatButton", mainArea, chatButtonCenterX, chatButtonCenterY, ChatButtonDiameter, HomeButtonBackgroundColor);
             AddCircleBorder(chatButton, StellaColorTokens.Get(ColorToken.TextShadow), 6f);
-            var chatText = CreateText("ChatDots", chatButton, "...", 46, StellaColorTokens.Get(ColorToken.TextShadow), TextAnchor.MiddleCenter);
+            var chatText = CreateText("ChatDots", chatButton, "...", 52, StellaColorTokens.Get(ColorToken.TextShadow), TextAnchor.MiddleCenter);
             AddTextShadow(chatText, new Color(0f, 0f, 0f, 0.2f));
 
-            var badge = CreateDesignCircle("Badge", mainArea, 69f, 224f, 18f, StellaColorTokens.Get(ColorToken.Attention));
-            var badgeText = CreateText("BadgeText", badge, "1", 18, Color.white, TextAnchor.MiddleCenter);
+            var badge = CreateDesignCircle("Badge", mainArea, chatButtonCenterX + 24f, chatButtonCenterY - 24f, ChatBadgeDiameter, StellaColorTokens.Get(ColorToken.Attention));
+            var badgeText = CreateText("BadgeText", badge, "1", 22, Color.white, TextAnchor.MiddleCenter);
             AddTextShadow(badgeText, StellaColorTokens.Get(ColorToken.TextShadow));
         }
 
@@ -778,10 +1151,10 @@ namespace StellaGuild.UI.Home
             SetDesignCircleAtPath(bottom, "GuildButton", 69f, 804f, MainButtonDiameter);
             SetDesignCircleAtPath(bottom, "WorldButton", 334f, 804f, MainButtonDiameter);
 
-            SetDesignCircleAtPath(bottom, "PostButton", 364f, 694f, SideActionButtonDiameter);
-            SetDesignCircleAtPath(bottom, "CargoButton", 364f, 610f, SideActionButtonDiameter);
-            SetDesignRectAtPath(bottom, "PostLabel", 312f, 709f, 104f, 52f);
-            SetDesignRectAtPath(bottom, "CargoLabel", 312f, 627f, 104f, 52f);
+            SetDesignCircleAtPath(bottom, "PostButton", SideActionButtonCenterX, PostButtonCenterY, SideActionButtonDiameter);
+            SetDesignCircleAtPath(bottom, "CargoButton", SideActionButtonCenterX, CargoButtonCenterY, SideActionButtonDiameter);
+            SetDesignRectAtPath(bottom, "PostLabel", GetSideActionLabelX(), GetSideActionLabelY(PostButtonCenterY), SideActionLabelWidth, SideActionLabelHeight);
+            SetDesignRectAtPath(bottom, "CargoLabel", GetSideActionLabelX(), GetSideActionLabelY(CargoButtonCenterY), SideActionLabelWidth, SideActionLabelHeight);
         }
 
         private void ApplyTopLocalizationAndLayout(Transform root)
@@ -1255,15 +1628,41 @@ namespace StellaGuild.UI.Home
             var rightMain = CreateDesignCircle("WorldButton", bottom, 334f, 804f, MainButtonDiameter, HomeButtonBackgroundColor);
             AddCircleBorder(rightMain, StellaColorTokens.Get(ColorToken.TextShadow), 8f);
 
-            var postButton = CreateDesignCircle("PostButton", bottom, 364f, 694f, SideActionButtonDiameter, HomeButtonBackgroundColor);
+            var postButton = CreateDesignCircle("PostButton", bottom, SideActionButtonCenterX, PostButtonCenterY, SideActionButtonDiameter, HomeButtonBackgroundColor);
             AddCircleBorder(postButton, StellaColorTokens.Get(ColorToken.TextShadow), 6f);
-            var postLabelText = CreateBottomLabel("PostLabel", bottom, postButtonLabel, 312f, 709f, 104f, 52f, 42);
+            var postLabelText = CreateBottomLabel(
+                "PostLabel",
+                bottom,
+                postButtonLabel,
+                GetSideActionLabelX(),
+                GetSideActionLabelY(PostButtonCenterY),
+                SideActionLabelWidth,
+                SideActionLabelHeight,
+                SideActionLabelFontSize);
             AddTextStroke(postLabelText);
 
-            var cargoButton = CreateDesignCircle("CargoButton", bottom, 364f, 610f, SideActionButtonDiameter, HomeButtonBackgroundColor);
+            var cargoButton = CreateDesignCircle("CargoButton", bottom, SideActionButtonCenterX, CargoButtonCenterY, SideActionButtonDiameter, HomeButtonBackgroundColor);
             AddCircleBorder(cargoButton, StellaColorTokens.Get(ColorToken.TextShadow), 6f);
-            var cargoLabelText = CreateBottomLabel("CargoLabel", bottom, cargoButtonLabel, 312f, 627f, 104f, 52f, 42);
+            var cargoLabelText = CreateBottomLabel(
+                "CargoLabel",
+                bottom,
+                cargoButtonLabel,
+                GetSideActionLabelX(),
+                GetSideActionLabelY(CargoButtonCenterY),
+                SideActionLabelWidth,
+                SideActionLabelHeight,
+                SideActionLabelFontSize);
             AddTextStroke(cargoLabelText);
+        }
+
+        private static float GetSideActionLabelX()
+        {
+            return SideActionButtonCenterX - (SideActionLabelWidth * 0.5f);
+        }
+
+        private static float GetSideActionLabelY(float buttonCenterY)
+        {
+            return buttonCenterY + SideActionLabelYOffset;
         }
 
         private Text CreateBottomLabel(string name, RectTransform parent, string value, float x, float y, float width, float height, int fontSize = 62)
@@ -1365,7 +1764,7 @@ namespace StellaGuild.UI.Home
             var text = textRect.gameObject.AddComponent<Text>();
             text.font = GetFont();
             text.text = value;
-            text.fontSize = fontSize;
+            text.fontSize = Mathf.Max(12, Mathf.RoundToInt(fontSize * HomeTextScale));
             text.alignment = alignment;
             text.color = color;
             text.raycastTarget = false;

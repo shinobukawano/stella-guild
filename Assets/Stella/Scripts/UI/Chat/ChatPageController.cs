@@ -1,6 +1,12 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
 using StellaGuild.Design;
 using UnityEngine;
 using UnityEngine.UI;
+#if UNITY_EDITOR
+using UnityEditor;
+#endif
 
 namespace StellaGuild.UI.Chat
 {
@@ -16,9 +22,21 @@ namespace StellaGuild.UI.Chat
         [SerializeField] private string leftMessageText = "好きなビールは黒ラベル！";
         [SerializeField] private string rightMessageText = "こんにちは！うめはらです！";
         [SerializeField] private string inputPlaceholder = "優しいコメントを入力 ....";
+        [SerializeField] private Sprite leftSpeakerIconSprite;
+        [SerializeField] private Sprite rightSpeakerIconSprite;
         [SerializeField] private bool rebuildLayout;
 
-        private const string RootName = "ChatPageRoot";
+        private const string RootName = "ChatPageRoot_v20260213_refined_readable";
+        private const float ChatTextScale = 1.12f;
+        private const float MessageRowHeight = 122f;
+        private const float MessageIconDiameter = 84f;
+        private const float MessageBubbleHalfHeight = 40f;
+        private const string LeftSpeakerIconAssetPath = "Assets/Stella/UI/icon.jpg";
+        private const string RightSpeakerIconAssetPath = "Assets/Stella/UI/icon-ume.png";
+        private const string LeftSpeakerIconFileName = "icon.jpg";
+        private const string RightSpeakerIconFileName = "icon-ume.png";
+        private static readonly Vector2 AvatarPadding = new(4f, 4f);
+        private const string TopSafeAreaFillName = "TopSafeAreaFill";
         private static readonly Color32 BackgroundColor = new(0xE6, 0xE0, 0xD5, 0xFF);
         private static readonly Color32 HeaderColor = new(0x00, 0x00, 0x00, 0xFF);
         private static readonly Color32 TabColor = new(0x02, 0x21, 0x6A, 0xFF);
@@ -31,6 +49,8 @@ namespace StellaGuild.UI.Chat
         private Texture2D _roundedTexture;
         private Texture2D _circleTexture;
         private Button _backButton;
+        private readonly Dictionary<string, Sprite> _uiFileSpriteCache = new(StringComparer.OrdinalIgnoreCase);
+        private readonly List<Texture2D> _uiFileTextures = new();
 
         protected override void OnInitialize()
         {
@@ -73,6 +93,27 @@ namespace StellaGuild.UI.Chat
 
                 _circleTexture = null;
             }
+
+            for (var i = 0; i < _uiFileTextures.Count; i++)
+            {
+                var texture = _uiFileTextures[i];
+                if (texture == null)
+                {
+                    continue;
+                }
+
+                if (Application.isPlaying)
+                {
+                    Destroy(texture);
+                }
+                else
+                {
+                    DestroyImmediate(texture);
+                }
+            }
+
+            _uiFileTextures.Clear();
+            _uiFileSpriteCache.Clear();
         }
 
         private void OnValidate()
@@ -82,6 +123,8 @@ namespace StellaGuild.UI.Chat
                 return;
             }
 
+            AutoAssignSpeakerSpritesInEditor();
+
             var root = transform.Find(RootName) as RectTransform;
             if (root == null)
             {
@@ -89,7 +132,9 @@ namespace StellaGuild.UI.Chat
             }
 
             ApplyTexts(root);
+            ApplyMessageIcons(root);
             EnsureBackButtonBinding(root);
+            ApplyTopSafeArea(root);
         }
 
         [ContextMenu("Rebuild Chat Layout")]
@@ -102,6 +147,8 @@ namespace StellaGuild.UI.Chat
 
         private void EnsureLayout()
         {
+            AutoAssignSpeakerSpritesInEditor();
+
             if (rebuildLayout)
             {
                 rebuildLayout = false;
@@ -114,7 +161,9 @@ namespace StellaGuild.UI.Chat
             if (root != null)
             {
                 ApplyTexts(root);
+                ApplyMessageIcons(root);
                 EnsureBackButtonBinding(root);
+                ApplyTopSafeArea(root);
                 return;
             }
 
@@ -174,7 +223,112 @@ namespace StellaGuild.UI.Chat
             BuildMessageArea(root);
             BuildInputArea(root);
             ApplyTexts(root);
+            ApplyMessageIcons(root);
             EnsureBackButtonBinding(root);
+            ApplyTopSafeArea(root);
+        }
+
+        private void ApplyTopSafeArea(RectTransform root)
+        {
+            if (root == null)
+            {
+                return;
+            }
+
+            var topInset = GetTopSafeInsetInCanvasUnits(root);
+
+            var header = root.Find("Header") as RectTransform;
+            if (header != null)
+            {
+                header.offsetMin = new Vector2(0f, -120f - topInset);
+                header.offsetMax = new Vector2(0f, -topInset);
+            }
+
+            var tabs = root.Find("Tabs") as RectTransform;
+            if (tabs != null)
+            {
+                tabs.offsetMin = new Vector2(36f, -252f - topInset);
+                tabs.offsetMax = new Vector2(-36f, -132f - topInset);
+            }
+
+            var messageArea = root.Find("MessageArea") as RectTransform;
+            if (messageArea != null)
+            {
+                messageArea.offsetMin = new Vector2(24f, 210f);
+                messageArea.offsetMax = new Vector2(-24f, -290f - topInset);
+            }
+
+            var safeFill = root.Find(TopSafeAreaFillName) as RectTransform;
+            if (safeFill == null)
+            {
+                safeFill = CreateRect(
+                    TopSafeAreaFillName,
+                    root,
+                    new Vector2(0f, 1f),
+                    new Vector2(1f, 1f),
+                    new Vector2(0f, -topInset),
+                    Vector2.zero);
+            }
+            else
+            {
+                safeFill.anchorMin = new Vector2(0f, 1f);
+                safeFill.anchorMax = new Vector2(1f, 1f);
+                safeFill.offsetMin = new Vector2(0f, -topInset);
+                safeFill.offsetMax = Vector2.zero;
+            }
+
+            var fillImage = safeFill.GetComponent<Image>();
+            if (fillImage == null)
+            {
+                fillImage = safeFill.gameObject.AddComponent<Image>();
+            }
+
+            fillImage.sprite = null;
+            fillImage.type = Image.Type.Simple;
+            fillImage.color = HeaderColor;
+            fillImage.raycastTarget = false;
+            safeFill.gameObject.SetActive(topInset > 0.5f);
+
+            if (header != null)
+            {
+                safeFill.SetSiblingIndex(Mathf.Max(0, header.GetSiblingIndex()));
+            }
+        }
+
+        private static float GetTopSafeInsetInCanvasUnits(RectTransform root)
+        {
+            if (ShouldIgnoreTopSafeInsetOnIos())
+            {
+                return 0f;
+            }
+
+            if (root == null)
+            {
+                return 0f;
+            }
+
+            var topInsetPixels = Mathf.Max(0f, Screen.height - Screen.safeArea.yMax);
+            if (topInsetPixels <= 0.01f)
+            {
+                return 0f;
+            }
+
+            var canvas = root.GetComponentInParent<Canvas>();
+            if (canvas == null)
+            {
+                return topInsetPixels;
+            }
+
+            return topInsetPixels / Mathf.Max(0.0001f, canvas.scaleFactor);
+        }
+
+        private static bool ShouldIgnoreTopSafeInsetOnIos()
+        {
+#if UNITY_IOS && !UNITY_EDITOR
+            return true;
+#else
+            return false;
+#endif
         }
 
         private void BuildHeader(RectTransform root)
@@ -191,7 +345,7 @@ namespace StellaGuild.UI.Chat
             headerImage.color = HeaderColor;
             headerImage.raycastTarget = false;
 
-            CreateText("StatusText", header, statusBarText, 58, Color.white, TextAnchor.MiddleCenter);
+            CreateText("StatusText", header, statusBarText, 62, Color.white, TextAnchor.MiddleCenter);
         }
 
         private void BuildTabs(RectTransform root)
@@ -230,7 +384,7 @@ namespace StellaGuild.UI.Chat
             border.effectDistance = new Vector2(1f, -1f);
             border.useGraphicAlpha = true;
 
-            CreateText("Label", tab, label, 56, Color.white, TextAnchor.MiddleCenter);
+            CreateText("Label", tab, label, 58, Color.white, TextAnchor.MiddleCenter);
         }
 
         private void BuildMessageArea(RectTransform root)
@@ -257,15 +411,15 @@ namespace StellaGuild.UI.Chat
                 new Vector2(0f, 0f),
                 new Vector2(1f, 0f),
                 new Vector2(0f, offsetY),
-                new Vector2(0f, offsetY + 110f));
+                new Vector2(0f, offsetY + MessageRowHeight));
 
             var icon = CreateRect(
                 "IconCircle",
                 row,
                 isLeftIcon ? new Vector2(0f, 0.5f) : new Vector2(1f, 0.5f),
                 isLeftIcon ? new Vector2(0f, 0.5f) : new Vector2(1f, 0.5f),
-                isLeftIcon ? new Vector2(0f, -40f) : new Vector2(-80f, -40f),
-                isLeftIcon ? new Vector2(80f, 40f) : new Vector2(0f, 40f));
+                isLeftIcon ? new Vector2(0f, -MessageIconDiameter * 0.5f) : new Vector2(-MessageIconDiameter, -MessageIconDiameter * 0.5f),
+                isLeftIcon ? new Vector2(MessageIconDiameter, MessageIconDiameter * 0.5f) : new Vector2(0f, MessageIconDiameter * 0.5f));
 
             var iconImage = icon.gameObject.AddComponent<Image>();
             iconImage.sprite = GetCircleSprite();
@@ -277,15 +431,15 @@ namespace StellaGuild.UI.Chat
             iconBorder.effectDistance = new Vector2(1f, -1f);
             iconBorder.useGraphicAlpha = true;
 
-            CreateText("IconLabel", icon, iconText, 26, BorderColor, TextAnchor.MiddleCenter);
+            CreateText("IconLabel", icon, iconText, 28, BorderColor, TextAnchor.MiddleCenter);
 
             var bubble = CreateRect(
                 "Bubble",
                 row,
                 new Vector2(0f, 0.5f),
                 new Vector2(1f, 0.5f),
-                isLeftIcon ? new Vector2(96f, -34f) : new Vector2(60f, -34f),
-                isLeftIcon ? new Vector2(-60f, 34f) : new Vector2(-96f, 34f));
+                isLeftIcon ? new Vector2(104f, -MessageBubbleHalfHeight) : new Vector2(64f, -MessageBubbleHalfHeight),
+                isLeftIcon ? new Vector2(-64f, MessageBubbleHalfHeight) : new Vector2(-104f, MessageBubbleHalfHeight));
 
             var bubbleImage = bubble.gameObject.AddComponent<Image>();
             bubbleImage.sprite = GetRoundedSprite();
@@ -298,14 +452,15 @@ namespace StellaGuild.UI.Chat
             bubbleBorder.effectDistance = new Vector2(1f, -1f);
             bubbleBorder.useGraphicAlpha = true;
 
-            var text = CreateText("MessageText", bubble, message, 30, BorderColor, TextAnchor.MiddleLeft);
+            var text = CreateText("MessageText", bubble, message, 36, BorderColor, TextAnchor.MiddleLeft);
             text.horizontalOverflow = HorizontalWrapMode.Wrap;
             text.verticalOverflow = VerticalWrapMode.Truncate;
             text.resizeTextForBestFit = false;
+            text.lineSpacing = 1.05f;
 
             var textRect = text.rectTransform;
-            textRect.offsetMin = new Vector2(28f, 0f);
-            textRect.offsetMax = new Vector2(-28f, 0f);
+            textRect.offsetMin = new Vector2(30f, 0f);
+            textRect.offsetMax = new Vector2(-30f, 0f);
         }
 
         private void BuildInputArea(RectTransform root)
@@ -323,8 +478,8 @@ namespace StellaGuild.UI.Chat
                 inputArea,
                 new Vector2(0f, 0.5f),
                 new Vector2(0f, 0.5f),
-                new Vector2(0f, -42f),
-                new Vector2(84f, 42f));
+                new Vector2(0f, -48f),
+                new Vector2(96f, 48f));
 
             var backButtonImage = backButton.gameObject.AddComponent<Image>();
             backButtonImage.sprite = GetRoundedSprite();
@@ -337,15 +492,15 @@ namespace StellaGuild.UI.Chat
             backBorder.effectDistance = new Vector2(1f, -1f);
             backBorder.useGraphicAlpha = true;
 
-            CreateText("BackArrow", backButton, "◀", 52, Color.white, TextAnchor.MiddleCenter);
+            CreateText("BackArrow", backButton, "◀", 56, Color.white, TextAnchor.MiddleCenter);
 
             var inputBubble = CreateRect(
                 "InputBubble",
                 inputArea,
                 new Vector2(0f, 0.5f),
                 new Vector2(1f, 0.5f),
-                new Vector2(100f, -42f),
-                new Vector2(0f, 42f));
+                new Vector2(112f, -48f),
+                new Vector2(0f, 48f));
 
             var inputImage = inputBubble.gameObject.AddComponent<Image>();
             inputImage.sprite = GetRoundedSprite();
@@ -358,16 +513,16 @@ namespace StellaGuild.UI.Chat
             inputBorder.effectDistance = new Vector2(1f, -1f);
             inputBorder.useGraphicAlpha = true;
 
-            var placeholder = CreateText("Placeholder", inputBubble, inputPlaceholder, 36, BorderColor, TextAnchor.MiddleLeft);
+            var placeholder = CreateText("Placeholder", inputBubble, inputPlaceholder, 38, BorderColor, TextAnchor.MiddleLeft);
             var placeholderRect = placeholder.rectTransform;
-            placeholderRect.offsetMin = new Vector2(30f, 0f);
-            placeholderRect.offsetMax = new Vector2(-90f, 0f);
+            placeholderRect.offsetMin = new Vector2(32f, 0f);
+            placeholderRect.offsetMax = new Vector2(-108f, 0f);
 
-            var send = CreateText("SendIcon", inputBubble, "▶", 54, Color.black, TextAnchor.MiddleCenter);
+            var send = CreateText("SendIcon", inputBubble, "▶", 58, Color.black, TextAnchor.MiddleCenter);
             var sendRect = send.rectTransform;
             sendRect.anchorMin = new Vector2(1f, 0f);
             sendRect.anchorMax = new Vector2(1f, 1f);
-            sendRect.offsetMin = new Vector2(-84f, 0f);
+            sendRect.offsetMin = new Vector2(-96f, 0f);
             sendRect.offsetMax = Vector2.zero;
         }
 
@@ -387,6 +542,255 @@ namespace StellaGuild.UI.Chat
             SetTextAtPath(root, "MessageArea/Row3/Bubble/MessageText", rightMessageText);
             SetTextAtPath(root, "MessageArea/Row4/Bubble/MessageText", leftMessageText);
         }
+
+        private void ApplyMessageIcons(RectTransform root)
+        {
+            if (root == null)
+            {
+                return;
+            }
+
+            var leftIcon = ResolveSpeakerSprite(LeftSpeakerIconFileName, leftSpeakerIconSprite);
+            var rightIcon = ResolveSpeakerSprite(RightSpeakerIconFileName, rightSpeakerIconSprite);
+
+            ApplyMessageIconToRow(root, "MessageArea/Row1/IconCircle", leftIcon);
+            ApplyMessageIconToRow(root, "MessageArea/Row2/IconCircle", rightIcon);
+            ApplyMessageIconToRow(root, "MessageArea/Row3/IconCircle", rightIcon);
+            ApplyMessageIconToRow(root, "MessageArea/Row4/IconCircle", leftIcon);
+        }
+
+        private void ApplyMessageIconToRow(RectTransform root, string iconPath, Sprite sprite)
+        {
+            var iconCircle = root.Find(iconPath) as RectTransform;
+            if (iconCircle == null)
+            {
+                return;
+            }
+
+            ApplyMessageAvatar(iconCircle, sprite);
+        }
+
+        private void ApplyMessageAvatar(RectTransform iconCircle, Sprite sprite)
+        {
+            if (iconCircle == null)
+            {
+                return;
+            }
+
+            var iconImage = iconCircle.GetComponent<Image>();
+            if (iconImage == null)
+            {
+                return;
+            }
+
+            var mask = iconCircle.GetComponent<Mask>();
+            if (mask == null)
+            {
+                mask = iconCircle.gameObject.AddComponent<Mask>();
+            }
+
+            mask.showMaskGraphic = true;
+
+            var avatar = iconCircle.Find("Avatar") as RectTransform;
+            if (avatar == null)
+            {
+                avatar = CreateRect(
+                    "Avatar",
+                    iconCircle,
+                    Vector2.zero,
+                    Vector2.one,
+                    new Vector2(AvatarPadding.x, AvatarPadding.y),
+                    new Vector2(-AvatarPadding.x, -AvatarPadding.y));
+            }
+            else
+            {
+                avatar.anchorMin = Vector2.zero;
+                avatar.anchorMax = Vector2.one;
+                avatar.offsetMin = new Vector2(AvatarPadding.x, AvatarPadding.y);
+                avatar.offsetMax = new Vector2(-AvatarPadding.x, -AvatarPadding.y);
+                avatar.anchoredPosition = Vector2.zero;
+            }
+
+            avatar.SetAsLastSibling();
+
+            var avatarImage = avatar.GetComponent<Image>();
+            if (avatarImage == null)
+            {
+                avatarImage = avatar.gameObject.AddComponent<Image>();
+            }
+
+            avatarImage.raycastTarget = false;
+
+            var iconLabel = iconCircle.Find("IconLabel");
+            if (sprite == null)
+            {
+                avatar.gameObject.SetActive(false);
+                if (iconLabel != null)
+                {
+                    iconLabel.gameObject.SetActive(true);
+                }
+
+                return;
+            }
+
+            avatar.gameObject.SetActive(true);
+            avatarImage.sprite = sprite;
+            avatarImage.type = Image.Type.Simple;
+            avatarImage.preserveAspect = false;
+            avatarImage.color = Color.white;
+
+            var avatarAspectFitter = avatar.GetComponent<AspectRatioFitter>();
+            if (avatarAspectFitter == null)
+            {
+                avatarAspectFitter = avatar.gameObject.AddComponent<AspectRatioFitter>();
+            }
+
+            avatarAspectFitter.aspectMode = AspectRatioFitter.AspectMode.EnvelopeParent;
+            avatarAspectFitter.aspectRatio = sprite.rect.width / Mathf.Max(1f, sprite.rect.height);
+
+            if (iconLabel != null)
+            {
+                iconLabel.gameObject.SetActive(false);
+            }
+        }
+
+        private Sprite ResolveSpeakerSprite(string fileName, Sprite directSprite)
+        {
+#if UNITY_EDITOR
+            if (!Application.isPlaying)
+            {
+                var assetPath = "Assets/Stella/UI/" + fileName;
+                EnsureTextureImportedAsSprite(assetPath);
+                var editorSprite = AssetDatabase.LoadAssetAtPath<Sprite>(assetPath);
+                if (editorSprite != null)
+                {
+                    return editorSprite;
+                }
+            }
+#endif
+
+            if (directSprite != null)
+            {
+                return directSprite;
+            }
+
+            return LoadSpriteFromUiFile(fileName);
+        }
+
+        private Sprite LoadSpriteFromUiFile(string fileName)
+        {
+            if (string.IsNullOrWhiteSpace(fileName))
+            {
+                return null;
+            }
+
+            if (_uiFileSpriteCache.TryGetValue(fileName, out var cached))
+            {
+                return cached;
+            }
+
+            var filePath = Path.Combine(Application.dataPath, "Stella", "UI", fileName);
+            if (!File.Exists(filePath))
+            {
+                _uiFileSpriteCache[fileName] = null;
+                return null;
+            }
+
+            byte[] bytes;
+            try
+            {
+                bytes = File.ReadAllBytes(filePath);
+            }
+            catch (IOException)
+            {
+                _uiFileSpriteCache[fileName] = null;
+                return null;
+            }
+
+            var texture = new Texture2D(2, 2, TextureFormat.RGBA32, false)
+            {
+                name = "RuntimeChatAvatar_" + fileName,
+                filterMode = FilterMode.Bilinear,
+                wrapMode = TextureWrapMode.Clamp
+            };
+
+            if (!ImageConversion.LoadImage(texture, bytes, false))
+            {
+                if (Application.isPlaying)
+                {
+                    Destroy(texture);
+                }
+                else
+                {
+                    DestroyImmediate(texture);
+                }
+
+                _uiFileSpriteCache[fileName] = null;
+                return null;
+            }
+
+            var sprite = Sprite.Create(
+                texture,
+                new Rect(0f, 0f, texture.width, texture.height),
+                new Vector2(0.5f, 0.5f),
+                100f,
+                0,
+                SpriteMeshType.FullRect);
+
+            _uiFileTextures.Add(texture);
+            _uiFileSpriteCache[fileName] = sprite;
+            return sprite;
+        }
+
+#if UNITY_EDITOR
+        private void AutoAssignSpeakerSpritesInEditor()
+        {
+            EnsureTextureImportedAsSprite(LeftSpeakerIconAssetPath);
+            EnsureTextureImportedAsSprite(RightSpeakerIconAssetPath);
+            leftSpeakerIconSprite = LoadSpriteIfMissing(leftSpeakerIconSprite, LeftSpeakerIconAssetPath);
+            rightSpeakerIconSprite = LoadSpriteIfMissing(rightSpeakerIconSprite, RightSpeakerIconAssetPath);
+        }
+
+        private static Sprite LoadSpriteIfMissing(Sprite current, string assetPath)
+        {
+            if (current != null)
+            {
+                return current;
+            }
+
+            EnsureTextureImportedAsSprite(assetPath);
+            return AssetDatabase.LoadAssetAtPath<Sprite>(assetPath);
+        }
+
+        private static void EnsureTextureImportedAsSprite(string assetPath)
+        {
+            var textureImporter = AssetImporter.GetAtPath(assetPath) as TextureImporter;
+            if (textureImporter == null)
+            {
+                return;
+            }
+
+            var needsReimport = textureImporter.textureType != TextureImporterType.Sprite
+                || textureImporter.spriteImportMode != SpriteImportMode.Single
+                || textureImporter.mipmapEnabled
+                || !textureImporter.alphaIsTransparency;
+
+            if (!needsReimport)
+            {
+                return;
+            }
+
+            textureImporter.textureType = TextureImporterType.Sprite;
+            textureImporter.spriteImportMode = SpriteImportMode.Single;
+            textureImporter.mipmapEnabled = false;
+            textureImporter.alphaIsTransparency = true;
+            textureImporter.SaveAndReimport();
+        }
+#else
+        private void AutoAssignSpeakerSpritesInEditor()
+        {
+        }
+#endif
 
         private void EnsureBackButtonBinding(RectTransform root)
         {
@@ -475,7 +879,7 @@ namespace StellaGuild.UI.Chat
             var text = textRect.gameObject.AddComponent<Text>();
             text.font = GetFont();
             text.text = value;
-            text.fontSize = fontSize;
+            text.fontSize = Mathf.Max(12, Mathf.RoundToInt(fontSize * ChatTextScale));
             text.alignment = alignment;
             text.color = color;
             text.raycastTarget = false;
