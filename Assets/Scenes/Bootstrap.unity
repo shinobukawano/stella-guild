@@ -28910,13 +28910,13 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::StellaGuild.UI.Home.HomeBaseBackground3D
   targetRawImage: {fileID: 1112648177}
-  textureSize: {x: 1024, y: 1024}
+  textureSize: {x: 1440, y: 2560}
   autoInitialize: 1
   renderEveryFrame: 1
-  cameraHeight: 36
-  cameraDistance: 30
-  cameraFieldOfView: 32
-  cameraLookAt: {x: 0, y: 0, z: 7}
+  cameraHeight: 32
+  cameraDistance: 24
+  cameraFieldOfView: 36
+  cameraLookAt: {x: 0, y: 1.2, z: 7}
   animateBackground: 1
   cameraOrbitSpeedDegrees: 6
   cameraOrbitDistance: 1.8
@@ -28932,12 +28932,12 @@ MonoBehaviour:
   dragPanSpeed: 0.08
   pinchPanSpeed: 0.05
   pinchZoomSpeed: 0.08
-  minCameraDistance: 18
-  maxCameraDistance: 52
+  minCameraDistance: 16
+  maxCameraDistance: 42
   maxPanX: 28
   minPanZ: -14
   maxPanZ: 34
-  serializedDataVersion: 2
+  serializedDataVersion: 3
 --- !u!114 &1112648177
 MonoBehaviour:
   m_ObjectHideFlags: 0

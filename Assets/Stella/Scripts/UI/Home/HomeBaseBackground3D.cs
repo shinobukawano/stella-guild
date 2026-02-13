@@ -12,6 +12,10 @@ namespace StellaGuild.UI.Home
     public sealed class HomeBaseBackground3D : MonoBehaviour
     {
         private const int CurrentSerializedDataVersion = 3;
+        private const int MinRenderTextureWidth = 1440;
+        private const int MinRenderTextureHeight = 2560;
+        private const int MaxRenderTextureWidth = 3072;
+        private const int MaxRenderTextureHeight = 4096;
 
         [SerializeField] private RawImage targetRawImage;
         [SerializeField] private Vector2Int textureSize = new(1440, 2560);
@@ -222,8 +226,8 @@ namespace StellaGuild.UI.Home
 
         private void BuildCameraAndLight()
         {
-            var renderWidth = Mathf.Clamp(textureSize.x, 720, 3072);
-            var renderHeight = Mathf.Clamp(textureSize.y, 1280, 4096);
+            var renderWidth = Mathf.Clamp(textureSize.x, MinRenderTextureWidth, MaxRenderTextureWidth);
+            var renderHeight = Mathf.Clamp(textureSize.y, MinRenderTextureHeight, MaxRenderTextureHeight);
 
             _renderTexture = new RenderTexture(renderWidth, renderHeight, 24, RenderTextureFormat.ARGB32)
             {
