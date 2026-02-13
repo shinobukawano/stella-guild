@@ -53,7 +53,7 @@ namespace StellaGuild.UI.Home
 
         private const string RootName = "HomeBaseRoot";
         private const string MapViewportPath = "WorldMap3DBackground";
-        private const string LayoutSignatureName = "LayoutSignature_v20260213_refined";
+        private const string LayoutSignatureName = "LayoutSignature_v20260213_refined_status_v2";
         private const float DesignWidth = 404f;
         private const float DesignHeight = 874f;
         private const float MainButtonDiameter = 112f;
@@ -75,6 +75,15 @@ namespace StellaGuild.UI.Home
         private const float SideActionLabelHeight = 56f;
         private const float SideActionLabelYOffset = 15f;
         private const int SideActionLabelFontSize = 50;
+        private const float StatusRowStartY = 71f;
+        private const float StatusRowSpacing = 31.5f;
+        private const float StatusLabelWidth = 38f;
+        private const float StatusValueWidth = 108f;
+        private const float StatusRowHeight = 25f;
+        private const float LeftStatusLabelStartX = 0f;
+        private const float LeftStatusValueStartX = 40f;
+        private const float RightStatusLabelStartX = 255f;
+        private const float RightStatusValueStartX = 296f;
         private const float HomeTextScale = 1.12f;
         private const string ButtonBaseFillName = "BaseFill";
         private const string ChatTapCatcherName = "TapCatcher";
@@ -1053,26 +1062,21 @@ namespace StellaGuild.UI.Home
         private void BuildStatusColumn(RectTransform parent, List<StatRow> rows, bool alignRight)
         {
             var column = CreateRect(alignRight ? "RightStats" : "LeftStats", parent, Vector2.zero, Vector2.one, Vector2.zero, Vector2.zero);
-            var labelStartX = alignRight ? 240f : 0f;
-            var valueStartX = alignRight ? 280f : 40f;
-            const float rowStartY = 71f;
-            const float rowSpacing = 31.5f;
-            const float labelWidth = 38f;
-            const float valueWidth = 124f;
-            const float rowHeight = 25f;
+            var labelStartX = alignRight ? RightStatusLabelStartX : LeftStatusLabelStartX;
+            var valueStartX = alignRight ? RightStatusValueStartX : LeftStatusValueStartX;
 
             for (var i = 0; i < Mathf.Min(3, rows.Count); i++)
             {
                 var row = rows[i];
-                var y = rowStartY + i * rowSpacing;
+                var y = StatusRowStartY + i * StatusRowSpacing;
 
                 var labelRect = CreateDesignRect(
                     $"{(alignRight ? "R" : "L")}Label{i}",
                     column,
                     labelStartX,
                     y,
-                    labelWidth,
-                    rowHeight);
+                    StatusLabelWidth,
+                    StatusRowHeight);
                 var labelImage = labelRect.gameObject.AddComponent<Image>();
                 ConfigureRoundedImage(labelImage, Color.black);
                 CreateText("LabelText", labelRect, row.label, 16, StellaColorTokens.Get(ColorToken.BaseBackground), TextAnchor.MiddleCenter);
@@ -1082,8 +1086,8 @@ namespace StellaGuild.UI.Home
                     column,
                     valueStartX,
                     y,
-                    valueWidth,
-                    rowHeight);
+                    StatusValueWidth,
+                    StatusRowHeight);
                 var valueImage = valueRect.gameObject.AddComponent<Image>();
                 ConfigureRoundedImage(valueImage, Color.white);
                 CreateText("ValueText", valueRect, row.value, 32, StellaColorTokens.Get(ColorToken.TextShadow), TextAnchor.MiddleCenter);
