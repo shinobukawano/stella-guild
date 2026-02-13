@@ -57,7 +57,7 @@ namespace StellaGuild.UI.Home
         private const float DesignWidth = 404f;
         private const float DesignHeight = 874f;
         private const float MainButtonDiameter = 112f;
-        private const float SideActionButtonDiameter = 98f;
+        private const float SideActionButtonDiameter = 64f;
         private const float ChatButtonDiameter = 68f;
         private const float ChatBadgeDiameter = 22f;
         private const float GuildBackdropCenterX = 20f;
@@ -68,9 +68,9 @@ namespace StellaGuild.UI.Home
         private const float GuildButtonCenterY = 820f;
         private const float WorldButtonCenterX = 350f;
         private const float WorldButtonCenterY = 820f;
-        private const float SideActionButtonCenterX = 352f;
+        private const float SideActionButtonCenterX = 368f;
         private const float PostButtonCenterY = 694f;
-        private const float CargoButtonCenterY = 610f;
+        private const float CargoButtonCenterY = 590f;
         private const float SideActionLabelWidth = 120f;
         private const float SideActionLabelHeight = 56f;
         private const float SideActionLabelYOffset = 15f;
