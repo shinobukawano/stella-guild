@@ -33,3 +33,7 @@ Recordings/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Local tooling / generated export
+.serena/
+ios-build/
