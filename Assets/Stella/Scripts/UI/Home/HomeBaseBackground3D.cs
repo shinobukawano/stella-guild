@@ -11,18 +11,18 @@ namespace StellaGuild.UI.Home
     [DisallowMultipleComponent]
     public sealed class HomeBaseBackground3D : MonoBehaviour
     {
-        private const int CurrentSerializedDataVersion = 2;
+        private const int CurrentSerializedDataVersion = 3;
 
         [SerializeField] private RawImage targetRawImage;
-        [SerializeField] private Vector2Int textureSize = new(1024, 1024);
+        [SerializeField] private Vector2Int textureSize = new(1440, 2560);
         [SerializeField] private bool autoInitialize = true;
         [SerializeField] private bool renderEveryFrame = true;
 
         [Header("Camera")]
-        [SerializeField] private float cameraHeight = 36f;
-        [SerializeField] private float cameraDistance = 30f;
-        [SerializeField] private float cameraFieldOfView = 32f;
-        [SerializeField] private Vector3 cameraLookAt = new(0f, 0f, 7f);
+        [SerializeField] private float cameraHeight = 32f;
+        [SerializeField] private float cameraDistance = 24f;
+        [SerializeField] private float cameraFieldOfView = 36f;
+        [SerializeField] private Vector3 cameraLookAt = new(0f, 1.2f, 7f);
 
         [Header("Animation")]
         [SerializeField] private bool animateBackground = true;
@@ -53,6 +53,7 @@ namespace StellaGuild.UI.Home
         private GameObject _worldRoot;
         private Camera _worldCamera;
         private Light _worldLight;
+        private Light _fillLight;
         private Material _groundMaterial;
         private Material _buildingMaterial;
         private Material _accentMaterial;
@@ -139,11 +140,11 @@ namespace StellaGuild.UI.Home
 
         private void BuildMaterials()
         {
-            _groundMaterial = CreateMaterial(new Color(0.99607843f, 0.9607843f, 0.9098039f, 1f), 0.05f, 0.05f);
-            _buildingMaterial = CreateMaterial(new Color(0.50f, 0.40f, 0.28f, 1f), 0.05f, 0.3f);
-            _accentMaterial = CreateMaterial(StellaColorTokens.Get(ColorToken.Attention), 0.2f, 0.45f);
-            _roadMaterial = CreateMaterial(StellaColorTokens.Get(ColorToken.BaseBackground), 0f, 0.04f);
-            _waterMaterial = CreateMaterial(new Color(0.40f, 0.75f, 0.76f, 1f), 0f, 0.18f);
+            _groundMaterial = CreateMaterial(new Color(0.95f, 0.88f, 0.74f, 1f), 0.02f, 0.08f);
+            _buildingMaterial = CreateMaterial(new Color(0.36f, 0.26f, 0.17f, 1f), 0.04f, 0.22f);
+            _accentMaterial = CreateMaterial(new Color(0.95f, 0.61f, 0.23f, 1f), 0.08f, 0.34f);
+            _roadMaterial = CreateMaterial(new Color(0.88f, 0.82f, 0.71f, 1f), 0f, 0.05f);
+            _waterMaterial = CreateMaterial(new Color(0.20f, 0.54f, 0.64f, 1f), 0f, 0.2f);
         }
 
         private void BuildWorld()
@@ -221,11 +222,19 @@ namespace StellaGuild.UI.Home
 
         private void BuildCameraAndLight()
         {
-            _renderTexture = new RenderTexture(textureSize.x, textureSize.y, 16, RenderTextureFormat.ARGB32)
+            var renderWidth = Mathf.Clamp(textureSize.x, 720, 3072);
+            var renderHeight = Mathf.Clamp(textureSize.y, 1280, 4096);
+
+            _renderTexture = new RenderTexture(renderWidth, renderHeight, 24, RenderTextureFormat.ARGB32)
             {
                 name = "HomeBaseBackdropRT",
-                antiAliasing = 2
+                antiAliasing = 4,
+                useMipMap = false,
+                autoGenerateMips = false,
+                filterMode = FilterMode.Bilinear,
+                anisoLevel = 0
             };
+            _renderTexture.Create();
 
             var cameraObject = new GameObject("BackdropCamera");
             cameraObject.transform.SetParent(_worldRoot.transform, false);
@@ -235,20 +244,31 @@ namespace StellaGuild.UI.Home
 
             _worldCamera = cameraObject.AddComponent<Camera>();
             _worldCamera.clearFlags = CameraClearFlags.SolidColor;
-            _worldCamera.backgroundColor = StellaColorTokens.Get(ColorToken.BaseBackground);
+            _worldCamera.backgroundColor = new Color(0.76f, 0.84f, 0.9f, 1f);
             _worldCamera.fieldOfView = cameraFieldOfView;
             _worldCamera.nearClipPlane = 0.1f;
             _worldCamera.farClipPlane = 250f;
+            _worldCamera.allowHDR = true;
+            _worldCamera.allowMSAA = true;
             _worldCamera.targetTexture = _renderTexture;
 
             var lightObject = new GameObject("BackdropLight");
             lightObject.transform.SetParent(_worldRoot.transform, false);
-            lightObject.transform.rotation = Quaternion.Euler(52f, -34f, 0f);
+            lightObject.transform.rotation = Quaternion.Euler(55f, -38f, 0f);
 
             _worldLight = lightObject.AddComponent<Light>();
             _worldLight.type = LightType.Directional;
-            _worldLight.intensity = 1.15f;
-            _worldLight.color = new Color(1f, 0.95f, 0.86f, 1f);
+            _worldLight.intensity = 1.28f;
+            _worldLight.color = new Color(1f, 0.93f, 0.82f, 1f);
+
+            var fillLightObject = new GameObject("BackdropFillLight");
+            fillLightObject.transform.SetParent(_worldRoot.transform, false);
+            fillLightObject.transform.rotation = Quaternion.Euler(32f, 146f, 0f);
+
+            _fillLight = fillLightObject.AddComponent<Light>();
+            _fillLight.type = LightType.Directional;
+            _fillLight.intensity = 0.48f;
+            _fillLight.color = new Color(0.68f, 0.77f, 0.98f, 1f);
 
             targetRawImage.texture = _renderTexture;
             targetRawImage.color = Color.white;
@@ -320,29 +340,44 @@ namespace StellaGuild.UI.Home
                 return;
             }
 
-            // Existing scene instances created before interaction/animation fields were added.
-            renderEveryFrame = true;
-            animateBackground = true;
-            cameraOrbitSpeedDegrees = 6f;
-            cameraOrbitDistance = 1.8f;
-            cameraBobAmplitude = 0.8f;
-            cameraBobSpeed = 0.85f;
-            lookAtBobAmplitude = 0.45f;
-            lookAtBobSpeed = 1.1f;
-            hqSpinSpeed = 20f;
-            beaconBobAmplitude = 0.2f;
-            beaconBobSpeed = 2.1f;
+            if (serializedDataVersion < 2)
+            {
+                // Existing scene instances created before interaction/animation fields were added.
+                renderEveryFrame = true;
+                animateBackground = true;
+                cameraOrbitSpeedDegrees = 6f;
+                cameraOrbitDistance = 1.8f;
+                cameraBobAmplitude = 0.8f;
+                cameraBobSpeed = 0.85f;
+                lookAtBobAmplitude = 0.45f;
+                lookAtBobSpeed = 1.1f;
+                hqSpinSpeed = 20f;
+                beaconBobAmplitude = 0.2f;
+                beaconBobSpeed = 2.1f;
 
-            enableTouchInteraction = true;
-            enableMouseInEditor = true;
-            dragPanSpeed = 0.08f;
-            pinchPanSpeed = 0.05f;
-            pinchZoomSpeed = 0.08f;
-            minCameraDistance = 18f;
-            maxCameraDistance = 52f;
-            maxPanX = 28f;
-            minPanZ = -14f;
-            maxPanZ = 34f;
+                enableTouchInteraction = true;
+                enableMouseInEditor = true;
+                dragPanSpeed = 0.08f;
+                pinchPanSpeed = 0.05f;
+                pinchZoomSpeed = 0.08f;
+                minCameraDistance = 18f;
+                maxCameraDistance = 52f;
+                maxPanX = 28f;
+                minPanZ = -14f;
+                maxPanZ = 34f;
+            }
+
+            if (serializedDataVersion < 3)
+            {
+                // Increase detail and contrast for the demo base background.
+                textureSize = new Vector2Int(1440, 2560);
+                cameraHeight = 32f;
+                cameraDistance = 24f;
+                cameraFieldOfView = 36f;
+                cameraLookAt = new Vector3(0f, 1.2f, 7f);
+                minCameraDistance = 16f;
+                maxCameraDistance = 42f;
+            }
 
             serializedDataVersion = CurrentSerializedDataVersion;
         }
@@ -835,6 +870,7 @@ namespace StellaGuild.UI.Home
 
             DestroyObject(_worldCamera);
             DestroyObject(_worldLight);
+            DestroyObject(_fillLight);
             DestroyObject(_worldRoot);
 
             DestroyObject(_groundMaterial);
@@ -857,6 +893,7 @@ namespace StellaGuild.UI.Home
             _beaconLeftBasePosition = Vector3.zero;
             _beaconRightBasePosition = Vector3.zero;
             _cameraBaseLocalPosition = Vector3.zero;
+            _fillLight = null;
             _panOffset = Vector3.zero;
             _zoomOffset = 0f;
             _isDragging = false;
