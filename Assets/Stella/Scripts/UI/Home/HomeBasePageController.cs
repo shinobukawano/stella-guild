@@ -60,6 +60,14 @@ namespace StellaGuild.UI.Home
         private const float SideActionButtonDiameter = 98f;
         private const float ChatButtonDiameter = 68f;
         private const float ChatBadgeDiameter = 22f;
+        private const float GuildBackdropCenterX = 20f;
+        private const float GuildBackdropCenterY = 857f;
+        private const float WorldBackdropCenterX = 358f;
+        private const float WorldBackdropCenterY = 857f;
+        private const float GuildButtonCenterX = 54f;
+        private const float GuildButtonCenterY = 820f;
+        private const float WorldButtonCenterX = 350f;
+        private const float WorldButtonCenterY = 820f;
         private const float SideActionButtonCenterX = 352f;
         private const float PostButtonCenterY = 694f;
         private const float CargoButtonCenterY = 610f;
@@ -75,6 +83,7 @@ namespace StellaGuild.UI.Home
         private const float ChatTapHotspotPadding = 18f;
         private const string HomeCenterIconFileName = "icon.jpg";
         private static readonly Color32 HomeButtonBackgroundColor = new(0xC6, 0xB1, 0x98, 0xFF);
+        private static readonly Color ChatButtonBackgroundColor = new(1f, 1f, 1f, 0f);
         private static readonly Color32 HomeCircleBorderColor = new(0x28, 0x19, 0x0A, 0xFF);
         private static readonly Color32 StatusBarBackgroundColor = new(0x00, 0x00, 0x00, 0xFF);
         private static readonly Vector2 MainButtonIconPadding = Vector2.zero;
@@ -1097,8 +1106,7 @@ namespace StellaGuild.UI.Home
             const float chatButtonCenterX = 47f;
             const float chatButtonCenterY = 247f;
 
-            var chatButton = CreateDesignCircle("ChatButton", mainArea, chatButtonCenterX, chatButtonCenterY, ChatButtonDiameter, HomeButtonBackgroundColor);
-            AddCircleBorder(chatButton, StellaColorTokens.Get(ColorToken.TextShadow), 6f);
+            var chatButton = CreateDesignCircle("ChatButton", mainArea, chatButtonCenterX, chatButtonCenterY, ChatButtonDiameter, ChatButtonBackgroundColor);
             var chatText = CreateText("ChatDots", chatButton, "...", 52, StellaColorTokens.Get(ColorToken.TextShadow), TextAnchor.MiddleCenter);
             AddTextShadow(chatText, new Color(0f, 0f, 0f, 0.2f));
 
@@ -1145,11 +1153,11 @@ namespace StellaGuild.UI.Home
             SetElementActive(bottom, "WorldLabel", false);
             SetBottomLabelText(bottom, "PostLabel", postButtonLabel);
             SetBottomLabelText(bottom, "CargoLabel", cargoButtonLabel);
-            SetDesignCircleAtPath(bottom, "GuildBackdrop", 34f, 841f, 172f);
-            SetDesignCircleAtPath(bottom, "WorldBackdrop", 344f, 841f, 172f);
+            SetDesignCircleAtPath(bottom, "GuildBackdrop", GuildBackdropCenterX, GuildBackdropCenterY, 172f);
+            SetDesignCircleAtPath(bottom, "WorldBackdrop", WorldBackdropCenterX, WorldBackdropCenterY, 172f);
 
-            SetDesignCircleAtPath(bottom, "GuildButton", 69f, 804f, MainButtonDiameter);
-            SetDesignCircleAtPath(bottom, "WorldButton", 334f, 804f, MainButtonDiameter);
+            SetDesignCircleAtPath(bottom, "GuildButton", GuildButtonCenterX, GuildButtonCenterY, MainButtonDiameter);
+            SetDesignCircleAtPath(bottom, "WorldButton", WorldButtonCenterX, WorldButtonCenterY, MainButtonDiameter);
 
             SetDesignCircleAtPath(bottom, "PostButton", SideActionButtonCenterX, PostButtonCenterY, SideActionButtonDiameter);
             SetDesignCircleAtPath(bottom, "CargoButton", SideActionButtonCenterX, CargoButtonCenterY, SideActionButtonDiameter);
@@ -1204,7 +1212,8 @@ namespace StellaGuild.UI.Home
             var mainArea = root.Find("MainArea");
             if (mainArea != null)
             {
-                ApplyCircleButtonBase(mainArea, "ChatButton", HomeButtonBackgroundColor);
+                ApplyCircleButtonBase(mainArea, "ChatButton", ChatButtonBackgroundColor);
+                SetElementActive(mainArea, "ChatButton/Border", false);
                 var hasCustomChatSprite = ApplyButtonOverlaySprite(mainArea, "ChatButton", "Icon", "chat.png", chatButtonSprite, ChatButtonIconPadding);
                 var chatDots = mainArea.Find("ChatButton/ChatDots");
                 if (chatDots != null)
@@ -1617,15 +1626,15 @@ namespace StellaGuild.UI.Home
         {
             var bottom = CreateRect("BottomArea", root, Vector2.zero, Vector2.one, Vector2.zero, Vector2.zero);
 
-            var guildBackdrop = CreateDesignCircle("GuildBackdrop", bottom, 34f, 841f, 172f, HomeButtonBackgroundColor);
+            var guildBackdrop = CreateDesignCircle("GuildBackdrop", bottom, GuildBackdropCenterX, GuildBackdropCenterY, 172f, HomeButtonBackgroundColor);
             guildBackdrop.SetAsFirstSibling();
-            var worldBackdrop = CreateDesignCircle("WorldBackdrop", bottom, 344f, 841f, 172f, HomeButtonBackgroundColor);
+            var worldBackdrop = CreateDesignCircle("WorldBackdrop", bottom, WorldBackdropCenterX, WorldBackdropCenterY, 172f, HomeButtonBackgroundColor);
             worldBackdrop.SetAsFirstSibling();
 
-            var leftMain = CreateDesignCircle("GuildButton", bottom, 69f, 804f, MainButtonDiameter, HomeButtonBackgroundColor);
+            var leftMain = CreateDesignCircle("GuildButton", bottom, GuildButtonCenterX, GuildButtonCenterY, MainButtonDiameter, HomeButtonBackgroundColor);
             AddCircleBorder(leftMain, StellaColorTokens.Get(ColorToken.TextShadow), 8f);
 
-            var rightMain = CreateDesignCircle("WorldButton", bottom, 334f, 804f, MainButtonDiameter, HomeButtonBackgroundColor);
+            var rightMain = CreateDesignCircle("WorldButton", bottom, WorldButtonCenterX, WorldButtonCenterY, MainButtonDiameter, HomeButtonBackgroundColor);
             AddCircleBorder(rightMain, StellaColorTokens.Get(ColorToken.TextShadow), 8f);
 
             var postButton = CreateDesignCircle("PostButton", bottom, SideActionButtonCenterX, PostButtonCenterY, SideActionButtonDiameter, HomeButtonBackgroundColor);

@@ -40,6 +40,7 @@ namespace StellaGuild.UI.Chat
         [SerializeField] private bool rebuildLayout;
 
         private const string RootName = "ChatPageRoot_v20260213_inputsend_v2";
+        private const string RootNamePrefix = "ChatPageRoot_";
         private const float ChatTextScale = 1.12f;
         private const float MessageRowHeight = 122f;
         private const float MessageIconDiameter = 84f;
@@ -163,11 +164,17 @@ namespace StellaGuild.UI.Chat
             }
 
             AutoAssignSpeakerSpritesInEditor();
+            RemoveStaleLayoutRoots();
 
             var root = transform.Find(RootName) as RectTransform;
             if (root == null)
             {
-                return;
+                BuildLayout();
+                root = transform.Find(RootName) as RectTransform;
+                if (root == null)
+                {
+                    return;
+                }
             }
 
             ApplyTexts(root);
@@ -188,6 +195,7 @@ namespace StellaGuild.UI.Chat
         private void EnsureLayout()
         {
             AutoAssignSpeakerSpritesInEditor();
+            RemoveStaleLayoutRoots();
 
             if (rebuildLayout)
             {
@@ -210,6 +218,32 @@ namespace StellaGuild.UI.Chat
 
             RemovePlaceholderChildren();
             BuildLayout();
+        }
+
+        private void RemoveStaleLayoutRoots()
+        {
+            for (var i = transform.childCount - 1; i >= 0; i--)
+            {
+                var child = transform.GetChild(i);
+                if (child == null)
+                {
+                    continue;
+                }
+
+                if (child.name == RootName || !child.name.StartsWith(RootNamePrefix, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                if (Application.isPlaying)
+                {
+                    Destroy(child.gameObject);
+                }
+                else
+                {
+                    DestroyImmediate(child.gameObject);
+                }
+            }
         }
 
         private void RemovePlaceholderChildren()
